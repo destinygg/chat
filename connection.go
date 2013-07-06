@@ -297,7 +297,7 @@ func (c *Connection) OnMsg(data []byte) {
 		return
 	}
 
-	if c.user != nil {
+	if c.user != nil && !c.user.isBot() {
 
 		// very simple heuristics of "punishing" the flooding user
 		// if the user keeps spamming the delay between messages increases

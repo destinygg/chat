@@ -108,7 +108,6 @@ func main() {
 	initUsers()
 	initEventlog()
 
-	http.Handle("/", http.FileServer(http.Dir("./public")))
 	http.HandleFunc("/ws", Handler)
 
 	fmt.Printf("Using %v threads, and listening on: %v\n", processes, addr)
