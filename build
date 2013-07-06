@@ -1,0 +1,2 @@
+#!/bin/bash
+go build -o $1 chat main.go data.go mutesbans.go user.go hub.go connection.go debug.go cache.go database.go eventlog.go

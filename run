@@ -1,0 +1,3 @@
+#!/bin/bash
+#go run -race main.go connection.go hub.go mutesbans.go data.go user.go debug.go cache.go database.go eventlog.go
+go run -race main.go connection.go hub.go mutesbans.go data.go mockuser.go debug.go cache.go database.go eventlog.go

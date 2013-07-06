@@ -1,0 +1,20 @@
+
+more general todo, shortterm:
+ ☐ direct messages
+ ☐ privileged web interface for introspecting the chat and influencing behaviour (like throttle times)
+ 
+short-medium term:
+ ☐ IRC gateway
+ ☐ polling through the chat
+
+medium term:
+ ☐ messaging a group of users, like everybody with a given flair - this transposes “multiple” channels onto a single one, could work fine
+ ☐ multiple channels (and the ui for it) if we still want it after the messaging a group of users thing
+ ☐ google moderator like functionality where the chat goes into a voting mode where you post your question and others vote it up to be asked, no idea how this should work
+ ☐ make sure links are safe by using the Goole Safe Browsing api
+
+I dont even know term:
+ ☐ friend system? wtf? what does that even mean
+ ☐ xmpp backend
+ ☐ anciliary info for users
+ ☐ reputation system? need to work out the specifics
