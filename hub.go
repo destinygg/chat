@@ -99,6 +99,8 @@ func (hub *Hub) remove(c *Connection) {
 		delete(hub.subs, c)
 	}
 	delete(hub.connections, c)
+
+	c.socket.Close()
 }
 
 func (hub *Hub) getIPsForUserid(userid Userid) map[string]net.IP {

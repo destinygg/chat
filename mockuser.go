@@ -33,7 +33,7 @@ type User struct {
 }
 
 func (u *User) isModerator() bool {
-	return u.features.Get(ISMODERATOR | ISADMIN)
+	return u.features.Get(ISMODERATOR | ISADMIN | ISBOT)
 }
 
 func (u *User) isSubscriber() bool {
