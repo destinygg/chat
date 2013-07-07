@@ -83,10 +83,6 @@ func newConnection(s *websocket.Conn, user *User) {
 		RWMutex:    sync.RWMutex{},
 	}
 
-	if c.user != nil {
-		c.user.assembleSimplifiedUser()
-	}
-
 	go c.writePumpText()
 	c.readPumpText()
 
@@ -188,7 +184,6 @@ func (c *Connection) writePumpText() {
 			if data, err := Marshal(message.data); err == nil {
 				if data, err := Pack(message.event, data); err == nil {
 					if err := c.write(websocket.OpText, data); err != nil {
-						D("write error: ", err)
 						return
 					}
 				}
@@ -300,7 +295,7 @@ func (c *Connection) OnMsg(data []byte) {
 	if c.user != nil && !c.user.isBot() {
 
 		// very simple heuristics of "punishing" the flooding user
-		// if the user keeps spamming the delay between messages increases
+		// if the user keeps spamming, the delay between messages increases
 		// this delay resets after a fixed amount of time
 		now := time.Now()
 		difference := now.Sub(c.user.lastmessagetime)
@@ -372,6 +367,7 @@ func (c *Connection) OnMute(data []byte) {
 	}
 
 	ok, uid := c.canModerateUser(mute.Data)
+	D(c.user.nick, " is trying to mute ", mute.Data, " uid: ", uid, " ok: ", ok)
 	if !ok || uid == 0 {
 		c.SendError("nopermission")
 		return

@@ -143,6 +143,7 @@ func getUser(r *http.Request) (u *User, banned bool) {
 	u.features.Set(ISADMIN)
 	u.features.Set(ISMODERATOR)
 	u.features.Set(ISPROTECTED)
-	D("User connected with id: ", u.id, " and nick: ", u.nick)
+	u.assembleSimplifiedUser()
+	D("User connected with id:", u.id, "and nick:", u.nick, "features:", u.simplified.Features, u.isModerator())
 	return
 }
