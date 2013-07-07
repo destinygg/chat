@@ -8,9 +8,9 @@ package main
 import (
 	_ "expvar"
 	"fmt"
+	"github.com/davecheney/profile"
 	"github.com/garyburd/go-websocket/websocket"
 	conf "github.com/msbranco/goconfig"
-
 	"log"
 	"net/http"
 	"runtime"
@@ -98,6 +98,17 @@ func main() {
 		processes = int64(runtime.NumCPU()) * 2
 	}
 	runtime.GOMAXPROCS(int(processes))
+
+	if debuggingenabled {
+		defer profile.Start(&profile.Config{
+			Quiet:          false,
+			CPUProfile:     true,
+			MemProfile:     true,
+			BlockProfile:   true,
+			ProfilePath:    "./",
+			NoShutdownHook: false,
+		}).Stop()
+	}
 
 	go hub.run()
 	initDatabase(dbtype, dbdsn)
