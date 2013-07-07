@@ -447,15 +447,7 @@ func (c *Connection) OnBan(data []byte) {
 		}
 	}
 
-	banUser(uid, ban)
-	logBan(c.user.id, uid, ban, "")
-	if ban.BanIP {
-		ips := hub.getIPsForUserid(uid)
-		for stringip, ip := range ips {
-			hub.ipbans <- ip
-			logBan(c.user.id, uid, ban, stringip)
-		}
-	}
+	banUser(c.user.id, uid, ban)
 
 	out := c.getEventDataOut()
 	out.Data = ban.Nick

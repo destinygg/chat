@@ -68,8 +68,9 @@ func isUserMuted(conn *Connection) bool {
 // ---------------
 
 type Bans struct {
-	users map[Userid]time.Time
-	ips   map[string]time.Time
+	users   map[Userid]time.Time
+	ips     map[string]time.Time
+	userips map[Userid][]string
 	sync.RWMutex
 }
 
@@ -79,10 +80,10 @@ func initBans() {
 	bans = &Bans{
 		make(map[Userid]time.Time),
 		make(map[string]time.Time),
+		make(map[Userid][]string),
 		sync.RWMutex{},
 	}
 	time.AfterFunc(CLEANMUTESBANSPERIOD, cleanBans)
-	loadActiveBans()
 
 	c, err := rds.PubSubClient()
 	if err != nil {
@@ -93,9 +94,11 @@ func initBans() {
 		B("Unable to subscribe to the redis refreshbans channel: ", err)
 	}
 	go (func() {
+		loadActiveBans()
 		for {
 			select {
 			case <-refreshban:
+				D("Refreshing bans")
 				loadActiveBans()
 			}
 		}
@@ -108,8 +111,9 @@ func cleanBans() {
 	defer bans.Unlock()
 	delcount := 0
 	for userid, unbantime := range bans.users {
-		if unbantime.Before(time.Now()) {
+		if unbantime.Before(time.Now().UTC()) {
 			delete(bans.users, userid)
+			bans.userips[userid] = nil
 			delcount++
 		}
 	}
@@ -125,28 +129,48 @@ func cleanBans() {
 	time.AfterFunc(CLEANMUTESBANSPERIOD, cleanBans)
 }
 
-func banUser(userid Userid, ban *BanIn) {
+func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 	bans.Lock()
-	bans.users[userid] = time.Now().UTC().Add(time.Duration(ban.Duration))
-	bans.Unlock()
-	hub.bans <- userid
-	D("Banned userid: ", userid)
+	defer bans.Unlock()
+	var expiretime time.Time
+
+	if ban.Ispermanent {
+		expiretime = time.Now().UTC().AddDate(10, 0, 0) // 10 years from now should be enough
+	} else {
+		expiretime = time.Now().UTC().Add(time.Duration(ban.Duration))
+	}
+
+	bans.users[userid] = expiretime
+	logBan(userid, targetuserid, ban, "")
+
+	if ban.BanIP {
+		ips := hub.getIPsForUserid(targetuserid)
+		uips := make([]string, 0)
+		for stringip, ip := range ips {
+			uips = append(uips, ip.String())
+			bans.ips[ip.String()] = expiretime
+			hub.ipbans <- ip
+			logBan(userid, targetuserid, ban, stringip)
+			D("IPBanned user", ban.Nick, targetuserid, "with ip:", stringip)
+		}
+
+		bans.userips[targetuserid] = uips
+	}
+
+	hub.bans <- targetuserid
+	D("Banned user", ban.Nick, targetuserid)
 }
 
 func unbanUserid(userid Userid) {
 	bans.Lock()
 	delete(bans.users, userid)
+	for _, stringip := range bans.userips[userid] {
+		delete(bans.ips, stringip)
+		D("Unbanned IP: ", stringip, "for userid:", userid)
+	}
+	bans.userips[userid] = nil
 	bans.Unlock()
 	D("Unbanned userid: ", userid)
-}
-
-func ipBanUser(conn *Connection) {
-	ip := conn.socket.RemoteAddr().(*net.TCPAddr).IP
-	bans.Lock()
-	bans.ips[ip.String()] = time.Now().UTC().Add(7 * 24 * time.Hour)
-	bans.Unlock()
-	hub.ipbans <- ip
-	D("IPBanned user with ip: ", ip.String())
 }
 
 func isUserBanned(conn *Connection) bool {
@@ -195,6 +219,7 @@ func loadActiveBans() {
 	// purge all the bans
 	bans.users = make(map[Userid]time.Time)
 	bans.ips = make(map[string]time.Time)
+	bans.userips = make(map[Userid][]string)
 
 	rows, err := db.Query(`
 		SELECT
@@ -228,6 +253,11 @@ func loadActiveBans() {
 
 		if ipaddress.Valid {
 			bans.ips[ipaddress.String] = endtimestamp.Time
+			if _, ok := bans.userips[uid]; !ok {
+				bans.userips[uid] = make([]string, 1)
+			}
+			bans.userips[uid] = append(bans.userips[uid], ipaddress.String)
+			hub.stringipbans <- ipaddress.String
 		} else {
 			bans.users[uid] = endtimestamp.Time
 		}

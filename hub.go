@@ -7,33 +7,35 @@ import (
 )
 
 type Hub struct {
-	connections map[*Connection]bool
-	broadcast   chan *message
-	register    chan *Connection
-	unregister  chan *Connection
-	mutes       chan Userid
-	bans        chan Userid
-	ipbans      chan net.IP
-	users       map[Userid]*SimplifiedUser
-	subs        map[*Connection]bool
-	submode     bool
-	sublock     sync.RWMutex
+	connections  map[*Connection]bool
+	broadcast    chan *message
+	register     chan *Connection
+	unregister   chan *Connection
+	mutes        chan Userid
+	bans         chan Userid
+	ipbans       chan net.IP
+	stringipbans chan string
+	users        map[Userid]*SimplifiedUser
+	subs         map[*Connection]bool
+	submode      bool
+	sublock      sync.RWMutex
 	sync.RWMutex
 }
 
 var hub = Hub{
-	broadcast:   make(chan *message, BROADCASTCHANNELSIZE),
-	register:    make(chan *Connection),
-	unregister:  make(chan *Connection, BROADCASTCHANNELSIZE),
-	connections: make(map[*Connection]bool),
-	mutes:       make(chan Userid),
-	bans:        make(chan Userid),
-	ipbans:      make(chan net.IP),
-	users:       make(map[Userid]*SimplifiedUser),
-	subs:        make(map[*Connection]bool),
-	submode:     false,
-	sublock:     sync.RWMutex{},
-	RWMutex:     sync.RWMutex{},
+	broadcast:    make(chan *message, BROADCASTCHANNELSIZE),
+	register:     make(chan *Connection),
+	unregister:   make(chan *Connection, BROADCASTCHANNELSIZE),
+	connections:  make(map[*Connection]bool),
+	mutes:        make(chan Userid),
+	bans:         make(chan Userid, 512),
+	ipbans:       make(chan net.IP, 512),
+	stringipbans: make(chan string, 512),
+	users:        make(map[Userid]*SimplifiedUser),
+	subs:         make(map[*Connection]bool),
+	submode:      false,
+	sublock:      sync.RWMutex{},
+	RWMutex:      sync.RWMutex{},
 }
 
 // run is meant to be run in a goroutine, handling all clients connected
@@ -72,6 +74,12 @@ func (hub *Hub) run() {
 					c.Banned()
 				}
 			}
+		case stringip := <-hub.stringipbans:
+			for c := range hub.connections {
+				if connip := c.socket.RemoteAddr().(*net.TCPAddr).IP.String(); connip == stringip {
+					c.Banned()
+				}
+			}
 		case message := <-hub.broadcast:
 			for c := range hub.connections {
 				if len(c.send) < SENDCHANNELSIZE {
@@ -95,8 +103,12 @@ func (hub *Hub) remove(c *Connection) {
 	defer hub.Unlock()
 
 	if c.user != nil {
-		delete(hub.users, c.user.id)
-		delete(hub.subs, c)
+		simplified := hub.users[c.user.id]
+		simplified.Connections--
+		if simplified.Connections <= 0 {
+			delete(hub.users, c.user.id)
+			delete(hub.subs, c)
+		}
 	}
 	delete(hub.connections, c)
 
