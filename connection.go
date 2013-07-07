@@ -367,7 +367,7 @@ func (c *Connection) OnMute(data []byte) {
 	}
 
 	ok, uid := c.canModerateUser(mute.Data)
-	D(c.user.nick, " is trying to mute ", mute.Data, " uid: ", uid, " ok: ", ok)
+	D(c.user.nick, " is trying to mute ", mute.Data, " uid: ", uid, " ok: ", ok, "duration: ", mute.Duration)
 	if !ok || uid == 0 {
 		c.SendError("nopermission")
 		return

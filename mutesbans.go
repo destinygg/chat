@@ -59,7 +59,7 @@ func isUserMuted(conn *Connection) bool {
 	mutes.RLock()
 	unmutetime, ok := mutes.users[userid]
 	mutes.RUnlock()
-	if !ok || unmutetime.Before(time.Now()) {
+	if !ok || unmutetime.After(time.Now()) {
 		return false
 	}
 	return true
