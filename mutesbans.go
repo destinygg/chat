@@ -39,7 +39,7 @@ func cleanMutes() {
 
 func muteUserid(userid Userid, duration int64) {
 	mutes.Lock()
-	mutes.users[userid] = time.Now().Add(time.Duration(duration))
+	mutes.users[userid] = time.Now().UTC().Add(time.Duration(duration))
 	mutes.Unlock()
 	hub.mutes <- userid
 }
@@ -59,7 +59,7 @@ func isUserMuted(conn *Connection) bool {
 	mutes.RLock()
 	unmutetime, ok := mutes.users[userid]
 	mutes.RUnlock()
-	if !ok || unmutetime.After(time.Now()) {
+	if !ok || time.Now().UTC().After(unmutetime) {
 		return false
 	}
 	return true
@@ -116,7 +116,7 @@ func cleanBans() {
 	DP("Cleaning bans, expired bans: ", delcount)
 	delcount = 0
 	for ip, unbantime := range bans.ips {
-		if unbantime.Before(time.Now()) {
+		if unbantime.Before(time.Now().UTC()) {
 			delete(bans.ips, ip)
 			delcount++
 		}
@@ -127,7 +127,7 @@ func cleanBans() {
 
 func banUser(userid Userid, ban *BanIn) {
 	bans.Lock()
-	bans.users[userid] = time.Now().Add(time.Duration(ban.Duration))
+	bans.users[userid] = time.Now().UTC().Add(time.Duration(ban.Duration))
 	bans.Unlock()
 	hub.bans <- userid
 	D("Banned userid: ", userid)
@@ -143,7 +143,7 @@ func unbanUserid(userid Userid) {
 func ipBanUser(conn *Connection) {
 	ip := conn.socket.RemoteAddr().(*net.TCPAddr).IP
 	bans.Lock()
-	bans.ips[ip.String()] = time.Now().Add(10 * time.Minute)
+	bans.ips[ip.String()] = time.Now().UTC().Add(7 * 24 * time.Hour)
 	bans.Unlock()
 	hub.ipbans <- ip
 	D("IPBanned user with ip: ", ip.String())
@@ -155,13 +155,13 @@ func isUserBanned(conn *Connection) bool {
 
 	ip := conn.socket.RemoteAddr().(*net.TCPAddr).IP.String()
 	unbantime, ok := bans.ips[ip]
-	if ok && unbantime.After(time.Now()) {
+	if ok && unbantime.After(time.Now().UTC()) {
 		return true
 	}
 
 	if conn.user != nil {
 		unbantime, ok := bans.users[conn.user.id]
-		if ok && unbantime.After(time.Now()) {
+		if ok && unbantime.After(time.Now().UTC()) {
 			return true
 		}
 	}
@@ -174,13 +174,13 @@ func isUseridIPBanned(ip string, uid Userid) bool {
 	defer bans.RUnlock()
 
 	unbantime, ok := bans.ips[ip]
-	if ok && unbantime.After(time.Now()) {
+	if ok && unbantime.After(time.Now().UTC()) {
 		return true
 	}
 
 	if uid != 0 {
 		unbantime, ok := bans.users[uid]
-		if ok && unbantime.After(time.Now()) {
+		if ok && unbantime.After(time.Now().UTC()) {
 			return true
 		}
 	}
