@@ -9,6 +9,7 @@ import (
 var (
 	insertstatement *sql.Stmt
 	banstatement    *sql.Stmt
+	unbanstatement  *sql.Stmt
 	// TODO privmsgstatement *sql.Stmt
 )
 
@@ -38,6 +39,17 @@ func initEventlog() {
 			reason         = ?,
 			starttimestamp = ?,
 			endtimestamp   = ?
+	`)
+
+	unbanstatement, err = db.Prepare(`
+		UPDATE bans
+		SET endtimestamp = NOW()
+		WHERE
+			targetuserid = ? AND
+			(
+				endtimestamp IS NULL OR
+				endtimestamp > NOW()
+			)
 	`)
 
 	if err != nil {
@@ -98,4 +110,12 @@ func logBan(userid Userid, targetuserid Userid, ban *BanIn, ip string) {
 		D("Unable to insert ban: ", err)
 	}
 
+}
+
+func logUnban(targetuserid Userid) {
+	_, err := unbanstatement.Exec(targetuserid)
+
+	if err != nil {
+		D("Unable to insert ban: ", err)
+	}
 }

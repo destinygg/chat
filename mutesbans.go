@@ -140,7 +140,7 @@ func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 		expiretime = time.Now().UTC().Add(time.Duration(ban.Duration))
 	}
 
-	bans.users[userid] = expiretime
+	bans.users[targetuserid] = expiretime
 	logBan(userid, targetuserid, ban, "")
 
 	if ban.BanIP {
@@ -162,15 +162,16 @@ func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 }
 
 func unbanUserid(userid Userid) {
-	// TODO need to persist this too
 	bans.Lock()
+	defer bans.Unlock()
+
+	logUnban(userid)
 	delete(bans.users, userid)
 	for _, stringip := range bans.userips[userid] {
 		delete(bans.ips, stringip)
 		D("Unbanned IP: ", stringip, "for userid:", userid)
 	}
 	bans.userips[userid] = nil
-	bans.Unlock()
 	D("Unbanned userid: ", userid)
 }
 
