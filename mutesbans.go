@@ -162,6 +162,7 @@ func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 }
 
 func unbanUserid(userid Userid) {
+	// TODO need to persist this too
 	bans.Lock()
 	delete(bans.users, userid)
 	for _, stringip := range bans.userips[userid] {

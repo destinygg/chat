@@ -15,7 +15,7 @@ type Hub struct {
 	bans         chan Userid
 	ipbans       chan net.IP
 	stringipbans chan string
-	users        map[Userid]*SimplifiedUser
+	users        map[Userid][]*Connection
 	subs         map[*Connection]bool
 	submode      bool
 	sublock      sync.RWMutex
@@ -31,7 +31,7 @@ var hub = Hub{
 	bans:         make(chan Userid, 512),
 	ipbans:       make(chan net.IP, 512),
 	stringipbans: make(chan string, 512),
-	users:        make(map[Userid]*SimplifiedUser),
+	users:        make(map[Userid][]*Connection),
 	subs:         make(map[*Connection]bool),
 	submode:      false,
 	sublock:      sync.RWMutex{},
@@ -47,39 +47,56 @@ func (hub *Hub) run() {
 			hub.Lock()
 			hub.connections[c] = true
 			if c.user != nil {
+				if c.user.isSubscriber() {
+					hub.subs[c] = true
+				}
 				if _, ok := hub.users[c.user.id]; !ok {
-					hub.users[c.user.id] = c.getSimplifiedUser()
+					hub.users[c.user.id] = make([]*Connection, 1, 2)
+					hub.users[c.user.id][0] = c
 				} else {
-					hub.users[c.user.id].Connections++
+					if len(hub.users[c.user.id]) <= 2 {
+						hub.users[c.user.id] = append(hub.users[c.user.id], c)
+						conncount := len(hub.users[c.user.id])
+						for _, v := range hub.users[c.user.id] {
+							v.user.simplified.Connections = uint8(conncount)
+						}
+					} else {
+						c.SendError("toomanyconnections")
+						c.stop <- true
+					}
 				}
 			}
 			hub.Unlock()
 		case c := <-hub.unregister:
 			hub.remove(c)
 		case userid := <-hub.mutes:
-			for c := range hub.connections {
-				if c.user != nil && c.user.id == userid {
-					c.Muted()
-				}
+			hub.Lock()
+			for _, c := range hub.users[userid] {
+				c.Muted()
 			}
+			hub.Unlock()
 		case userid := <-hub.bans:
-			for c := range hub.connections {
-				if c.user != nil && c.user.id == userid {
-					c.Banned()
-				}
+			hub.Lock()
+			for _, c := range hub.users[userid] {
+				c.Banned()
 			}
+			hub.Unlock()
 		case ip := <-hub.ipbans:
+			hub.Lock()
 			for c := range hub.connections {
 				if connip := c.socket.RemoteAddr().(*net.TCPAddr).IP; connip.Equal(ip) {
 					c.Banned()
 				}
 			}
+			hub.Unlock()
 		case stringip := <-hub.stringipbans:
+			hub.Lock()
 			for c := range hub.connections {
 				if connip := c.socket.RemoteAddr().(*net.TCPAddr).IP.String(); connip == stringip {
 					c.Banned()
 				}
 			}
+			hub.Unlock()
 		case message := <-hub.broadcast:
 			for c := range hub.connections {
 				if len(c.send) < SENDCHANNELSIZE {
@@ -103,10 +120,8 @@ func (hub *Hub) remove(c *Connection) {
 	defer hub.Unlock()
 
 	if c.user != nil {
-		simplified := hub.users[c.user.id]
-		simplified.Connections--
-		if simplified.Connections <= 0 {
-			delete(hub.users, c.user.id)
+		hub.users[c.user.id] = removeConnFromArray(hub.users[c.user.id], c)
+		if len(hub.users[c.user.id]) == 0 {
 			delete(hub.subs, c)
 		}
 	}
@@ -139,4 +154,28 @@ func (hub *Hub) canUserSpeak(c *Connection) bool {
 
 	return false
 
+}
+
+func removeConnFromArray(a []*Connection, v *Connection) (ret []*Connection) {
+	ret = a
+	for i, va := range a {
+		if va == v {
+			j := i + 1
+			va.user.simplified.Connections--
+			if len(a)-1 < j {
+				// pop
+				a[i] = nil
+				ret = a[:i]
+			} else {
+				// https://code.google.com/p/go-wiki/wiki/SliceTricks
+				// cut
+				copy(a[i:], a[j:])
+				for k, n := len(a)-j+i, len(a); k < n; k++ {
+					a[k] = nil
+				}
+				ret = a[:len(a)-j+i]
+			}
+		}
+	}
+	return
 }

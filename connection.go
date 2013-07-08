@@ -27,6 +27,7 @@ var invalidmessage = regexp.MustCompile(`\p{M}{5,}|[\p{Zl}\p{Zp}\x{202f}\x{00a0}
 type Connection struct {
 	socket     *websocket.Conn
 	send       chan *message
+	blocksend  chan *blockSend
 	stop       chan bool
 	user       *User
 	lastactive time.Time
@@ -71,11 +72,17 @@ type NamesOut struct {
 	Connectioncount int                `json:"connectioncount"`
 }
 
+type blockSend struct {
+	m *message
+	c chan bool
+}
+
 // Create a new connection using the specified socket and router.
 func newConnection(s *websocket.Conn, user *User) {
 	c := &Connection{
 		socket:     s,
 		send:       make(chan *message, SENDCHANNELSIZE),
+		blocksend:  make(chan *blockSend),
 		stop:       make(chan bool),
 		user:       user,
 		lastactive: time.Now(),
@@ -177,6 +184,22 @@ func (c *Connection) writePumpText() {
 			}
 		case <-c.stop:
 			return
+		case wm := <-c.blocksend:
+			message := wm.m
+			if data, err := Marshal(message.data); err == nil {
+				if data, err := Pack(message.event, data); err == nil {
+					if err := c.write(websocket.OpText, data); err != nil {
+						wm.c <- false
+						return
+					} else {
+						wm.c <- true
+					}
+				} else {
+					wm.c <- false
+				}
+			} else {
+				wm.c <- false
+			}
 		case message, ok := <-c.send:
 			if !ok {
 				return
@@ -198,7 +221,19 @@ func (c *Connection) Emit(event string, data interface{}) {
 		data:  data,
 	}
 }
+func (c *Connection) EmitBlock(event string, data interface{}) (ch chan bool) {
+	ch = make(chan bool)
 
+	c.blocksend <- &blockSend{
+		m: &message{
+			event: event,
+			data:  data,
+		},
+		c: ch,
+	}
+
+	return
+}
 func (c *Connection) Broadcast(event string, data *EventDataOut) {
 	m := &message{
 		event: event,
@@ -235,13 +270,13 @@ func (c *Connection) canModerateUser(nick string) (bool, Userid) {
 
 	hub.RLock()
 	defer hub.RUnlock()
-	user, ok := hub.users[uid]
+	users, ok := hub.users[uid]
 
 	if !ok {
 		return false, 0
 	}
 
-	for _, feature := range *user.Features {
+	for _, feature := range *users[0].user.simplified.Features {
 		if feature == "protected" {
 			return false, 0
 		}
@@ -342,16 +377,16 @@ func (c *Connection) Names() {
 	hub.RLock()
 
 	// TODO think about how to cache this effectively and race-free, not ideal
-	i := 0
-	users := make([]*SimplifiedUser, len(hub.users))
+	users := make([]*SimplifiedUser, 0, 100)
 	conncount := len(hub.connections)
 	for _, v := range hub.users {
-		users[i] = v
-		i++
+		for _, c := range v {
+			users = append(users, c.user.simplified)
+		}
 	}
-	hub.RUnlock()
 
-	c.Emit("NAMES", &NamesOut{&users, conncount})
+	<-c.EmitBlock("NAMES", &NamesOut{&users, conncount})
+	hub.RUnlock()
 }
 
 func (c *Connection) OnMute(data []byte) {
@@ -547,7 +582,7 @@ func (c *Connection) Quit() {
 }
 
 func (c *Connection) SendError(identifier string) {
-	c.Emit("ERR", identifier)
+	<-c.EmitBlock("ERR", identifier)
 }
 
 func (c *Connection) Refresh() {
