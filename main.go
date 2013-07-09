@@ -6,10 +6,10 @@ http://www.apache.org/licenses/LICENSE-2.0.html
 package main
 
 import (
+	"code.google.com/p/go.net/websocket"
 	_ "expvar"
 	"fmt"
 	"github.com/davecheney/profile"
-	"github.com/garyburd/go-websocket/websocket"
 	conf "github.com/msbranco/goconfig"
 	"log"
 	"net/http"
@@ -119,7 +119,7 @@ func main() {
 	initUsers()
 	initEventlog()
 
-	http.HandleFunc("/ws", Handler)
+	http.Handle("/ws", websocket.Handler(Handler))
 
 	fmt.Printf("Using %v threads, and listening on: %v\n", processes, addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
@@ -131,22 +131,12 @@ func unixMilliTime() int64 {
 	return time.Now().UTC().Truncate(time.Millisecond).UnixNano() / int64(time.Millisecond)
 }
 
-func Handler(w http.ResponseWriter, r *http.Request) {
-	// Check if method used was GET.
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", 405)
-		return
-	}
-
+func Handler(socket *websocket.Conn) {
+	defer socket.Close()
+	r := socket.Request()
 	user, banned := getUser(r)
 	if banned {
-		http.Error(w, "Authorization failed", 403)
-		return
-	}
-
-	socket, err := websocket.Upgrade(w, r.Header, nil, 1024, 1024)
-	if _, ok := err.(websocket.HandshakeError); ok {
-		http.Error(w, "Not a websocket handshake", 400)
+		websocket.Message.Send(socket, `ERR "banned"`)
 		return
 	}
 

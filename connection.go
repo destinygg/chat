@@ -2,9 +2,8 @@ package main
 
 import (
 	"bytes"
+	"code.google.com/p/go.net/websocket"
 	"crypto/md5"
-	"github.com/garyburd/go-websocket/websocket"
-	"io/ioutil"
 	"regexp"
 	"strings"
 	"sync"
@@ -99,33 +98,24 @@ func (c *Connection) readPumpText() {
 	defer func() {
 		c.Quit()
 		hub.unregister <- c
+		c.socket.Close()
 	}()
 
 	hub.register <- c
 	c.Names() // send the currently connected users to the client
 	c.Join()  // broadcast to the chat that a user has connected
-	c.socket.SetReadLimit(MAXMESSAGESIZE)
 
+	message := make([]byte, MAXMESSAGESIZE)
 	for {
 		// need to rearm the deadline on every read, or else the lib disconnects us
 		// same thing for the writeDeadline
 		c.socket.SetReadDeadline(time.Now().Add(READTIMEOUT))
-		op, r, err := c.socket.NextReader()
+		n, err := c.socket.Read(message)
 		if err != nil {
-			return
+			break
 		}
 
-		if op != websocket.OpText {
-			continue
-		}
-
-		message, err := ioutil.ReadAll(r)
-		if err != nil {
-			D("read error: ", err)
-			return
-		}
-
-		name, data, err := Unpack(message)
+		name, data, err := Unpack(string(message[:n]))
 		if err != nil {
 			// invalid protocol message from the client, just ignore it,
 			// should we instead disconnect the user?
@@ -163,7 +153,6 @@ func (c *Connection) readPumpText() {
 
 func (c *Connection) writePumpText() {
 	defer func() {
-		c.write(websocket.OpClose, []byte{})
 		c.socket.Close() // Necessary to force reading to stop, will start the cleanup
 	}()
 	for {
@@ -188,7 +177,7 @@ func (c *Connection) writePumpText() {
 			message := wm.m
 			if data, err := Marshal(message.data); err == nil {
 				if data, err := Pack(message.event, data); err == nil {
-					if err := c.write(websocket.OpText, data); err != nil {
+					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						wm.c <- false
 						return
 					} else {
@@ -206,7 +195,7 @@ func (c *Connection) writePumpText() {
 			}
 			if data, err := Marshal(message.data); err == nil {
 				if data, err := Pack(message.event, data); err == nil {
-					if err := c.write(websocket.OpText, data); err != nil {
+					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
 				}
@@ -242,12 +231,6 @@ func (c *Connection) Broadcast(event string, data *EventDataOut) {
 	hub.broadcast <- m
 	// by definition only users can send messages
 	logEvent(c.user.id, event, data)
-}
-
-// Helper for writing to socket with deadline.
-func (c *Connection) write(opCode int, payload []byte) error {
-	c.socket.SetWriteDeadline(time.Now().Add(WRITETIMEOUT))
-	return c.socket.WriteMessage(opCode, payload)
 }
 
 func (c *Connection) getSimplifiedUser() *SimplifiedUser {
