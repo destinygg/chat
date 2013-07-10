@@ -43,6 +43,7 @@ func main() {
 
 	shouldrestart := make(chan bool)
 	processexited := make(chan bool)
+	t := time.NewTicker(500 * time.Millisecond)
 	sct := make(chan os.Signal, 1)
 	signal.Notify(sct, syscall.SIGTERM)
 
@@ -74,7 +75,6 @@ again:
 
 	time.Sleep(1 * time.Second)
 	go checkResponse(serverurl, origin, shouldrestart)
-	t := time.NewTicker(500 * time.Millisecond)
 
 	for {
 		select {
