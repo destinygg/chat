@@ -1,0 +1,2 @@
+#!/bin/bash
+go build -o $1 angel main.go debug.go
