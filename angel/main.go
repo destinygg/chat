@@ -48,7 +48,7 @@ func main() {
 
 	go (func() {
 		for _ = range sct {
-			log.Println("CAUGHT SIGTERM, restarting the chat")
+			P("CAUGHT SIGTERM, restarting the chat")
 			shouldrestart <- true
 		}
 	})()
@@ -60,15 +60,15 @@ again:
 
 	laststarttime := time.Now()
 	if err := cmd.Start(); err != nil {
-		D("Error starting", binpath, err)
+		P("Error starting", binpath, err)
 		return
 	}
 
 	go (func() {
 		if err := cmd.Wait(); err != nil {
-			D("Error while waiting for process to exit ", err)
+			P("Error while waiting for process to exit ", err)
 		}
-		D("Chat process exited, restarting")
+		P("Chat process exited, restarting")
 		processexited <- true
 	})()
 
@@ -85,7 +85,7 @@ again:
 			// TODO move pprof files out of the dir
 		case <-processexited:
 			if time.Now().Sub(laststarttime) < 5*time.Second {
-				D("Tried restarting the chat process too fast, sleeping for 5 seconds")
+				P("Tried restarting the chat process too fast, sleeping for 5 seconds")
 				time.Sleep(5 * time.Second)
 			}
 			goto again
@@ -114,16 +114,14 @@ func checkResponse(serverurl, origin string, shouldrestart chan bool) {
 			return
 		}
 
-		if debuggingenabled {
-			D("checkResponse received:", string(buff[:len]))
-		}
+		D("checkResponse received:", string(buff[:len]))
 
 		if string(buff[:4]) == "PING" {
 			ws.SetWriteDeadline(time.Now().Add(time.Second))
 			buff[1] = 'O'
 			_, err = ws.Write(buff[:len])
 			if err != nil {
-				D("Unable to write to the websocket", err)
+				P("Unable to write to the websocket", err)
 				shouldrestart <- true
 				return
 			}
@@ -133,12 +131,13 @@ func checkResponse(serverurl, origin string, shouldrestart chan bool) {
 
 func checkNames(serverurl, origin string, shouldrestart chan bool) {
 	ws, err := websocket.Dial(serverurl, "", origin)
-	defer ws.Close()
 	if err != nil {
 		D("Unable to connect to ", serverurl)
 		shouldrestart <- true
 		return
 	}
+
+	defer ws.Close()
 
 	buff := make([]byte, 512)
 	ws.SetReadDeadline(time.Now().Add(time.Second))
@@ -150,12 +149,10 @@ func checkNames(serverurl, origin string, shouldrestart chan bool) {
 	}
 
 	if string(buff[:5]) != "NAMES" && string(buff[:4]) != "JOIN" {
-		D("Unexpected data received: ", string(buff))
+		P("Unexpected data received: ", string(buff))
 		shouldrestart <- true
 		return
 	}
 
-	if debuggingenabled {
-		D("checkNames received NAMES or JOIN, exiting, data was:", string(buff))
-	}
+	D("checkNames received NAMES or JOIN, exiting, data was:", string(buff))
 }
