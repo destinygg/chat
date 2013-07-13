@@ -66,11 +66,6 @@ type PingOut struct {
 	Timestamp int64 `json:"data"`
 }
 
-type NamesOut struct {
-	Users           *[]*SimplifiedUser `json:"users"`
-	Connectioncount int                `json:"connectioncount"`
-}
-
 type blockSend struct {
 	m *message
 	c chan bool
@@ -96,14 +91,11 @@ func newConnection(s *websocket.Conn, user *User) {
 
 func (c *Connection) readPumpText() {
 	defer func() {
-		c.Quit()
-		hub.unregister <- c
 		c.socket.Close()
 	}()
 
 	hub.register <- c
-	c.Names() // send the currently connected users to the client
-	c.Join()  // broadcast to the chat that a user has connected
+	c.Join() // broadcast to the chat that a user has connected
 
 	message := make([]byte, MAXMESSAGESIZE)
 	for {
@@ -153,6 +145,8 @@ func (c *Connection) readPumpText() {
 
 func (c *Connection) writePumpText() {
 	defer func() {
+		c.Quit()
+		hub.unregister <- c
 		c.socket.Close() // Necessary to force reading to stop, will start the cleanup
 	}()
 	for {
@@ -246,23 +240,9 @@ func (c *Connection) canModerateUser(nick string) (bool, Userid) {
 		return false, 0
 	}
 
-	uid := <-getUseridForNick(nick)
-	if uid == 0 || c.user.id == uid {
+	uid, protected := getUseridForNick(nick)
+	if uid == 0 || c.user.id == uid || protected {
 		return false, 0
-	}
-
-	hub.RLock()
-	defer hub.RUnlock()
-	users, ok := hub.users[uid]
-
-	if !ok {
-		return false, 0
-	}
-
-	for _, feature := range *users[0].user.simplified.Features {
-		if feature == "protected" {
-			return false, 0
-		}
 	}
 
 	return true, uid
@@ -355,21 +335,8 @@ func (c *Connection) OnPrivmsg(data []byte) {
 	// TODO check if valid utf8, api call? need to be sync so that we know what to return, not a problem, already running in a goroutine
 }
 
-func (c *Connection) Names() {
-
-	hub.RLock()
-
-	// TODO think about how to cache this effectively and race-free, not ideal
-	users := make([]*SimplifiedUser, 0, 100)
-	conncount := len(hub.connections)
-	for _, v := range hub.users {
-		for _, c := range v {
-			users = append(users, c.user.simplified)
-		}
-	}
-
-	<-c.EmitBlock("NAMES", &NamesOut{&users, conncount})
-	hub.RUnlock()
+func (c *Connection) Names(names *NamesOut) {
+	c.Emit("NAMES", names)
 }
 
 func (c *Connection) OnMute(data []byte) {
@@ -419,7 +386,7 @@ func (c *Connection) OnUnmute(data []byte) {
 		return
 	}
 
-	uid := <-getUseridForNick(user.Data)
+	uid, _ := getUseridForNick(user.Data)
 	if uid == 0 {
 		c.SendError("nopermission")
 		return
@@ -485,7 +452,7 @@ func (c *Connection) OnUnban(data []byte) {
 		return
 	}
 
-	uid := <-getUseridForNick(user.Data)
+	uid, _ := getUseridForNick(user.Data)
 	if uid == 0 {
 		c.SendError("nopermission")
 		return
@@ -517,13 +484,9 @@ func (c *Connection) OnSubonly(data []byte) {
 
 	switch {
 	case m.Data == "on":
-		hub.sublock.Lock()
-		hub.submode = true
-		hub.sublock.Unlock()
+		hub.sublock <- true
 	case m.Data == "off":
-		hub.sublock.Lock()
-		hub.submode = false
-		hub.sublock.Unlock()
+		hub.sublock <- false
 	default:
 		c.SendError("protocolerror")
 		return
@@ -569,5 +532,7 @@ func (c *Connection) SendError(identifier string) {
 }
 
 func (c *Connection) Refresh() {
-	c.Emit("REFRESH", c.getEventDataOut())
+	<-c.EmitBlock("REFRESH", c.getEventDataOut())
+	c.Quit()
+	hub.unregister <- c
 }

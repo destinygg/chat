@@ -20,7 +20,6 @@ var (
 )
 
 func initMutes() {
-
 	go (func() {
 		loadMutes()
 		t := time.NewTimer(CLEANMUTESBANSPERIOD)
@@ -49,6 +48,7 @@ func loadMutes() {
 	n, err := ioutil.ReadFile("mutes.dc")
 	if err != nil {
 		D("Error while reading from mutes file")
+		return
 	}
 	m := bytes.NewBuffer(n)
 	dec := gob.NewDecoder(m)
@@ -81,6 +81,10 @@ func cleanMutes() {
 
 func muteUserid(userid Userid, duration int64) {
 	muteuserid <- &useridTime{userid, time.Now().UTC().Add(time.Duration(duration))}
+}
+
+func unmuteUserid(uid Userid) {
+	unmuteuserid <- uid
 }
 
 func isUserMuted(conn *Connection) bool {

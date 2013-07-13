@@ -20,6 +20,15 @@ func (b *BitField) Set(bitnum uint32) {
 	b.data |= bitnum
 }
 
+func (b *BitField) NumSet() (c uint8) {
+	// Counting bits set, Brian Kernighan's way
+	v := b.data
+	for c = 0; v != 0; c++ {
+		v &= v - 1 // clear the least significant bit set
+	}
+	return
+}
+
 type Userid int64
 type User struct {
 	id              Userid
@@ -87,38 +96,29 @@ func getUseridForNick(nick string) chan Userid {
 
 func (u *User) assembleSimplifiedUser() {
 
-	i := 0
-	s := make([]string, 6)
+	s := make([]string, 0, u.features.NumSet())
 	if u.features.Get(ISPROTECTED) {
-		s[i] = "protected"
-		i++
+		s = append(s, "protected")
 	}
 	if u.features.Get(ISSUBSCRIBER) {
-		s[i] = "subscriber"
-		i++
+		s = append(s, "subscriber")
 	}
 	if u.features.Get(ISVIP) {
-		s[i] = "vip"
-		i++
+		s = append(s, "vip")
 	}
 	if u.features.Get(ISMODERATOR) {
-		s[i] = "moderator"
-		i++
+		s = append(s, "moderator")
 	}
 	if u.features.Get(ISADMIN) {
-		s[i] = "admin"
-		i++
+		s = append(s, "admin")
 	}
 	if u.features.Get(ISBOT) {
-		s[i] = "bot"
-		i++
+		s = append(s, "bot")
 	}
-
-	f := s[:i]
 
 	u.simplified = &SimplifiedUser{
 		u.nick,
-		&f,
+		&s,
 		1,
 	}
 }

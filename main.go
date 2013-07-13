@@ -110,7 +110,7 @@ func main() {
 		}).Stop()
 	}
 
-	go hub.run()
+	initHub()
 	initDatabase(dbtype, dbdsn)
 	initRedis(redisaddr, redisdb, redispw)
 

@@ -1,102 +1,146 @@
 package main
 
 import (
+	"bytes"
+	"crypto/md5"
+	"io"
 	"net"
 	"sync"
 	"time"
 )
 
 type Hub struct {
-	connections  map[*Connection]bool
-	broadcast    chan *message
-	register     chan *Connection
-	unregister   chan *Connection
-	mutes        chan Userid
-	bans         chan Userid
-	ipbans       chan net.IP
-	stringipbans chan string
-	users        map[Userid][]*Connection
-	subs         map[*Connection]bool
-	submode      bool
-	sublock      sync.RWMutex
+	connections map[*Connection]bool
+	broadcast   chan *message
+	register    chan *Connection
+	unregister  chan *Connection
+	bans        chan Userid
+	ipbans      chan string
+	getips      chan useridips
+	users       map[Userid]*User
+	refreshuser chan Userid
+	setuser     chan uiduser
+	getuser     chan uidchan
+	subs        map[*Connection]bool
+	submode     bool
+	sublock     chan bool
 	sync.RWMutex
 }
 
-var hub = Hub{
-	broadcast:    make(chan *message, BROADCASTCHANNELSIZE),
-	register:     make(chan *Connection),
-	unregister:   make(chan *Connection, BROADCASTCHANNELSIZE),
-	connections:  make(map[*Connection]bool),
-	mutes:        make(chan Userid),
-	bans:         make(chan Userid, 512),
-	ipbans:       make(chan net.IP, 512),
-	stringipbans: make(chan string, 512),
-	users:        make(map[Userid][]*Connection),
-	subs:         make(map[*Connection]bool),
-	submode:      false,
-	sublock:      sync.RWMutex{},
-	RWMutex:      sync.RWMutex{},
+type uidchan struct {
+	userid Userid
+	c      chan *User
 }
 
-// run is meant to be run in a goroutine, handling all clients connected
+type uiduser struct {
+	userid Userid
+	user   *User
+}
+
+type useridips struct {
+	userid Userid
+	c      chan []string
+}
+
+type NamesOut struct {
+	Users       *[]*SimplifiedUser `json:"users"`
+	Connections int                `json:"connectioncount"`
+}
+
+var (
+	namecache *NamesOut
+	namehash  []byte
+)
+
+var hub = Hub{
+	connections: make(map[*Connection]bool),
+	broadcast:   make(chan *message, BROADCASTCHANNELSIZE),
+	register:    make(chan *Connection),
+	unregister:  make(chan *Connection),
+	bans:        make(chan Userid),
+	ipbans:      make(chan string),
+	getips:      make(chan useridips),
+	users:       make(map[Userid]*User),
+	refreshuser: make(chan Userid),
+	setuser:     make(chan uiduser),
+	getuser:     make(chan uidchan),
+	subs:        make(map[*Connection]bool),
+	submode:     false,
+	sublock:     make(chan bool),
+	RWMutex:     sync.RWMutex{},
+}
+
+func initHub() {
+	go hub.run()
+}
+
 func (hub *Hub) run() {
 	pinger := time.NewTicker(PINGINTERVAL)
 	for {
 		select {
 		case c := <-hub.register:
-			hub.Lock()
 			hub.connections[c] = true
 			if c.user != nil {
 				if c.user.isSubscriber() {
 					hub.subs[c] = true
 				}
 				if _, ok := hub.users[c.user.id]; !ok {
-					hub.users[c.user.id] = make([]*Connection, 1, 2)
-					hub.users[c.user.id][0] = c
+					hub.users[c.user.id] = c.user
+					hub.users[c.user.id].connections = make([]*Connection, 1, 3)
+					hub.users[c.user.id].connections[0] = c
+					hub.generateNames()
 				} else {
-					if len(hub.users[c.user.id]) <= 2 {
-						hub.users[c.user.id] = append(hub.users[c.user.id], c)
-						conncount := len(hub.users[c.user.id])
-						for _, v := range hub.users[c.user.id] {
-							v.user.simplified.Connections = uint8(conncount)
-						}
+					if len(hub.users[c.user.id].connections) <= 3 {
+						hub.users[c.user.id].connections = append(hub.users[c.user.id].connections, c)
+						conncount := len(hub.users[c.user.id].connections)
+						hub.users[c.user.id].simplified.Connections = uint8(conncount)
 					} else {
 						c.SendError("toomanyconnections")
 						c.stop <- true
+						continue
 					}
 				}
 			}
-			hub.Unlock()
+			if namecache != nil {
+				namecache.Connections = len(hub.connections)
+				c.Names(namecache)
+			}
 		case c := <-hub.unregister:
 			hub.remove(c)
-		case userid := <-hub.mutes:
-			hub.Lock()
-			for _, c := range hub.users[userid] {
-				c.Muted()
+		case userid := <-hub.refreshuser:
+			if u, ok := hub.users[userid]; ok {
+				for _, c := range u.connections {
+					c.Refresh()
+				}
 			}
-			hub.Unlock()
+		case d := <-hub.getuser:
+			if u, ok := hub.users[d.userid]; ok {
+				d.c <- u
+			} else {
+				d.c <- nil
+			}
 		case userid := <-hub.bans:
-			hub.Lock()
-			for _, c := range hub.users[userid] {
-				c.Banned()
-			}
-			hub.Unlock()
-		case ip := <-hub.ipbans:
-			hub.Lock()
-			for c := range hub.connections {
-				if connip := c.socket.RemoteAddr().(*net.TCPAddr).IP; connip.Equal(ip) {
+			if u, ok := hub.users[userid]; ok {
+				for _, c := range u.connections {
 					c.Banned()
 				}
 			}
-			hub.Unlock()
-		case stringip := <-hub.stringipbans:
-			hub.Lock()
+		case stringip := <-hub.ipbans:
 			for c := range hub.connections {
 				if connip := c.socket.RemoteAddr().(*net.TCPAddr).IP.String(); connip == stringip {
 					c.Banned()
 				}
 			}
-			hub.Unlock()
+		case d := <-hub.getips:
+			ips := make([]string, 0, 3)
+			for c := range hub.connections {
+				if c.user == nil || c.user.id != d.userid {
+					continue
+				}
+				ip := c.socket.RemoteAddr().(*net.TCPAddr).IP.String()
+				ips = append(ips, ip)
+			}
+			d.c <- ips
 		case message := <-hub.broadcast:
 			for c := range hub.connections {
 				if len(c.send) < SENDCHANNELSIZE {
@@ -110,18 +154,19 @@ func (hub *Hub) run() {
 					c.ping <- t
 				}
 			}
+		case d := <-hub.sublock:
+			hub.Lock()
+			hub.submode = d
+			hub.Unlock()
 		}
 	}
 }
 
 func (hub *Hub) remove(c *Connection) {
 
-	hub.Lock()
-	defer hub.Unlock()
-
 	if c.user != nil {
-		hub.users[c.user.id] = removeConnFromArray(hub.users[c.user.id], c)
-		if len(hub.users[c.user.id]) == 0 {
+		hub.users[c.user.id].connections = removeConnFromArray(hub.users[c.user.id].connections, c)
+		if len(hub.users[c.user.id].connections) == 0 {
 			delete(hub.subs, c)
 		}
 	}
@@ -130,23 +175,16 @@ func (hub *Hub) remove(c *Connection) {
 	c.socket.Close()
 }
 
-func (hub *Hub) getIPsForUserid(userid Userid) map[string]net.IP {
-	hub.RLock()
-	defer hub.RUnlock()
-	ips := make(map[string]net.IP)
-	for c := range hub.connections {
-		if c.user == nil || c.user.id != userid {
-			continue
-		}
-		ip := c.socket.RemoteAddr().(*net.TCPAddr).IP
-		ips[ip.String()] = ip
-	}
-	return ips
+func (hub *Hub) getIPsForUserid(userid Userid) []string {
+	// TODO if user not connected get ips from redis, also means need to store ips there
+	m := make(chan []string)
+	hub.getips <- useridips{userid, m}
+	return <-m
 }
 
 func (hub *Hub) canUserSpeak(c *Connection) bool {
-	hub.sublock.RLock()
-	defer hub.sublock.RUnlock()
+	hub.RLock()
+	defer hub.RUnlock()
 
 	if !hub.submode || c.user.isSubscriber() {
 		return true
@@ -156,7 +194,28 @@ func (hub *Hub) canUserSpeak(c *Connection) bool {
 
 }
 
+func (hub *Hub) generateNames() {
+	hash := md5.New()
+	for _, v := range hub.users {
+		io.WriteString(hash, v.nick)
+	}
+
+	hashsum := hash.Sum(nil)
+	if namehash != nil && bytes.Equal(hashsum, namehash) {
+		return
+	}
+
+	users := make([]*SimplifiedUser, 0, len(hub.users))
+	for _, v := range hub.users {
+		users = append(users, v.simplified)
+	}
+
+	namehash = hashsum
+	namecache = &NamesOut{&users, len(hub.connections)}
+}
+
 func removeConnFromArray(a []*Connection, v *Connection) (ret []*Connection) {
+	// https://code.google.com/p/go-wiki/wiki/SliceTricks
 	ret = a
 	for i, va := range a {
 		if va == v {
@@ -167,7 +226,6 @@ func removeConnFromArray(a []*Connection, v *Connection) (ret []*Connection) {
 				a[i] = nil
 				ret = a[:i]
 			} else {
-				// https://code.google.com/p/go-wiki/wiki/SliceTricks
 				// cut
 				copy(a[i:], a[j:])
 				for k, n := len(a)-j+i, len(a); k < n; k++ {

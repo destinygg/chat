@@ -68,9 +68,9 @@ func initBans() {
 				cleanBans()
 			case uid := <-unbanuserid:
 				delete(bans.users, uid)
-				for _, stringip := range bans.userips[uid] {
-					delete(bans.ips, stringip)
-					D("Unbanned IP: ", stringip, "for userid:", uid)
+				for _, ip := range bans.userips[uid] {
+					delete(bans.ips, ip)
+					D("Unbanned IP: ", ip, "for userid:", uid)
 				}
 				bans.userips[uid] = nil
 			case d := <-banuserid:
@@ -148,11 +148,11 @@ func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 
 	if ban.BanIP {
 		ips := hub.getIPsForUserid(targetuserid)
-		for stringip, ip := range ips {
-			banip <- &banIp{targetuserid, stringip, expiretime}
+		for _, ip := range ips {
+			banip <- &banIp{targetuserid, ip, expiretime}
 			hub.ipbans <- ip
-			logBan(userid, targetuserid, ban, stringip)
-			D("IPBanned user", ban.Nick, targetuserid, "with ip:", stringip)
+			logBan(userid, targetuserid, ban, ip)
+			D("IPBanned user", ban.Nick, targetuserid, "with ip:", ip)
 		}
 	}
 
@@ -210,6 +210,7 @@ func loadActiveBans() {
 
 	if err != nil {
 		B("Unable to get active bans: ", err)
+		return
 	}
 
 	for rows.Next() {
@@ -220,6 +221,7 @@ func loadActiveBans() {
 
 		if err != nil {
 			B("Unable to scan row: ", err)
+			continue
 		}
 
 		if !endtimestamp.Valid {
@@ -232,7 +234,7 @@ func loadActiveBans() {
 				bans.userips[uid] = make([]string, 1)
 			}
 			bans.userips[uid] = append(bans.userips[uid], ipaddress.String)
-			hub.stringipbans <- ipaddress.String
+			hub.ipbans <- ipaddress.String
 		} else {
 			bans.users[uid] = endtimestamp.Time
 		}
