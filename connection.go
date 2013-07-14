@@ -510,15 +510,6 @@ func (c *Connection) OnPing(data []byte) {
 }
 
 func (c *Connection) OnPong(data []byte) {
-	/*
-		d := &PingOut{}
-		if err := Unmarshal(data, d); err != nil {
-			c.SendError("protocolerror")
-			return
-		}
-		the lag would be time.Unix(d.timestamp / time.Second, d.timestamp % time.Second)
-		we dont care because c.lastactive was already updated in the read side
-	*/
 }
 
 func (c *Connection) Quit() {
@@ -532,7 +523,6 @@ func (c *Connection) SendError(identifier string) {
 }
 
 func (c *Connection) Refresh() {
-	<-c.EmitBlock("REFRESH", c.getEventDataOut())
-	c.Quit()
-	hub.unregister <- c
+	c.Emit("REFRESH", c.getEventDataOut())
+	c.stop <- true
 }

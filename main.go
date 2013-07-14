@@ -19,16 +19,15 @@ import (
 
 const (
 	WRITETIMEOUT         = 10 * time.Second
-	READTIMEOUT          = 1 * time.Minute
+	READTIMEOUT          = time.Minute
 	PINGINTERVAL         = 10 * time.Second
 	PINGTIMEOUT          = 30 * time.Second
 	MAXMESSAGESIZE       = 6144 // 512 max chars in a message, 8bytes per chars possible, plus factor in some protocol overhead
 	SENDCHANNELSIZE      = 16
 	BROADCASTCHANNELSIZE = 256
-	CLEANMUTESBANSPERIOD = time.Hour
-	DEFAULTBANDURATION   = 10 * time.Minute
-	DEFAULTMUTEDURATION  = time.Minute
-	SCROLLBACKLINES      = "200"
+	CLEANMUTESBANSPERIOD = 10 * time.Minute
+	DEFAULTBANDURATION   = time.Hour
+	DEFAULTMUTEDURATION  = 10 * time.Minute
 )
 
 const (
@@ -95,9 +94,18 @@ func main() {
 	dbdsn, _ := c.GetString("database", "dsn")
 
 	if processes <= 0 {
-		processes = int64(runtime.NumCPU()) * 2
+		processes = int64(runtime.NumCPU())
 	}
 	runtime.GOMAXPROCS(int(processes))
+	go (func() {
+		t := time.NewTimer(time.Minute)
+		for {
+			select {
+			case <-t.C:
+				runtime.GC()
+			}
+		}
+	})()
 
 	if debuggingenabled {
 		defer profile.Start(&profile.Config{
