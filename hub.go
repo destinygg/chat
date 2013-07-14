@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,8 +20,7 @@ type Hub struct {
 	getips      chan useridips
 	users       map[Userid]*User
 	refreshuser chan Userid
-	setuser     chan uiduser
-	getuser     chan uidchan
+	getuser     chan *uidnickfeaturechan
 	subs        map[*Connection]bool
 	submode     bool
 	sublock     chan bool
@@ -62,8 +62,7 @@ var hub = Hub{
 	getips:      make(chan useridips),
 	users:       make(map[Userid]*User),
 	refreshuser: make(chan Userid),
-	setuser:     make(chan uiduser),
-	getuser:     make(chan uidchan),
+	getuser:     make(chan *uidnickfeaturechan),
 	subs:        make(map[*Connection]bool),
 	submode:     false,
 	sublock:     make(chan bool),
@@ -117,7 +116,24 @@ func (hub *Hub) run() {
 			if u, ok := hub.users[d.userid]; ok {
 				d.c <- u
 			} else {
-				d.c <- nil
+				u = &User{
+					id:              d.userid,
+					nick:            d.nick,
+					features:        BitField{},
+					lastmessage:     nil,
+					lastmessagetime: time.Time{},
+					lastactive:      time.Now(),
+					delayscale:      1,
+					simplified:      nil,
+					connections:     nil,
+					RWMutex:         sync.RWMutex{},
+				}
+				u.setFeatures(d.features)
+				u.assembleSimplifiedUser()
+				hub.users[d.userid] = u
+				protected := u.isProtected()
+				addnickuid <- &nickuidprot{strings.ToLower(u.nick), uidprot{d.userid, protected}}
+				d.c <- u
 			}
 		case userid := <-hub.bans:
 			if u, ok := hub.users[userid]; ok {
