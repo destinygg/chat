@@ -149,12 +149,11 @@ func (hub *Hub) run() {
 			}
 		case d := <-hub.getips:
 			ips := make([]string, 0, 3)
-			for c := range hub.connections {
-				if c.user == nil || c.user.id != d.userid {
-					continue
+			if users, ok := hub.users[d.userid]; ok {
+				for _, c := range users.connections {
+					ip := c.socket.RemoteAddr().(*net.TCPAddr).IP.String()
+					ips = append(ips, ip)
 				}
-				ip := c.socket.RemoteAddr().(*net.TCPAddr).IP.String()
-				ips = append(ips, ip)
 			}
 			d.c <- ips
 		case message := <-hub.broadcast:

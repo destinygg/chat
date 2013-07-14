@@ -148,6 +148,9 @@ func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 
 	if ban.BanIP {
 		ips := hub.getIPsForUserid(targetuserid)
+		if len(ips) == 0 {
+			D("No ips found for user", targetuserid)
+		}
 		for _, ip := range ips {
 			banip <- &banIp{targetuserid, ip, expiretime}
 			hub.ipbans <- ip
