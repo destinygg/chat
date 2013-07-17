@@ -54,12 +54,25 @@ func main() {
 		}
 	})()
 
+	restartdelay := 5 * time.Second // the delay when restarting too fast
+	var restarttimer *time.Timer
+
 again:
 	cmd := exec.Command(binpath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	laststarttime := time.Now()
+	if restartdelay > 5*time.Second {
+		if restarttimer != nil {
+			restarttimer.Stop()
+		}
+
+		restarttimer = time.AfterFunc(5*time.Minute, func() {
+			restartdelay = 5 * time.Second
+		})
+	}
+
 	if err := cmd.Start(); err != nil {
 		P("Error starting", binpath, err)
 		return
@@ -84,9 +97,10 @@ again:
 			cmd.Process.Signal(syscall.SIGINT)
 			// TODO move pprof files out of the dir
 		case <-processexited:
-			if time.Now().Sub(laststarttime) < 5*time.Second {
-				P("Tried restarting the chat process too fast, sleeping for 5 seconds")
-				time.Sleep(5 * time.Second)
+			if time.Now().Sub(laststarttime) < restartdelay {
+				P("Tried restarting the chat process too fast, sleeping for: ", restartdelay/time.Second, " seconds")
+				time.Sleep(restartdelay)
+				restartdelay += time.Second
 			}
 			goto again
 		}
