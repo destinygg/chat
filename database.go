@@ -15,7 +15,7 @@ func initDatabase(dbtype string, dbdsn string) {
 	if err != nil || err2 != nil {
 		B("Could not connect to database: ", err, err2)
 	}
-	db.SetMaxIdleConns(200) // totally made up value
+	db.SetMaxIdleConns(10) // totally made up value
 
 	go (func() {
 		t := time.NewTicker(time.Minute)

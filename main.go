@@ -30,20 +30,6 @@ const (
 	DEFAULTMUTEDURATION  = 10 * time.Minute
 )
 
-const (
-	ISADMIN      = 1 << iota
-	ISMODERATOR  = 1 << iota
-	ISVIP        = 1 << iota
-	ISPROTECTED  = 1 << iota
-	ISSUBSCRIBER = 1 << iota
-	ISBOT        = 1 << iota
-)
-
-type message struct {
-	event string
-	data  interface{}
-}
-
 var (
 	debuggingenabled = false
 	DELAY            = 300 * time.Millisecond
@@ -118,6 +104,7 @@ func main() {
 		}).Stop()
 	}
 
+	initNamesCache()
 	initHub()
 	initDatabase(dbtype, dbdsn)
 	initRedis(redisaddr, redisdb, redispw)

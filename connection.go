@@ -24,13 +24,14 @@ import (
 var invalidmessage = regexp.MustCompile(`\p{M}{5,}|[\p{Zl}\p{Zp}\x{202f}\x{00a0}]`)
 
 type Connection struct {
-	socket     *websocket.Conn
-	send       chan *message
-	blocksend  chan *blockSend
-	stop       chan bool
-	user       *User
-	lastactive time.Time
-	ping       chan time.Time
+	socket         *websocket.Conn
+	send           chan *message
+	sendmarshalled chan *message
+	blocksend      chan *message
+	stop           chan bool
+	user           *User
+	lastactive     time.Time
+	ping           chan time.Time
 	sync.RWMutex
 }
 
@@ -66,22 +67,23 @@ type PingOut struct {
 	Timestamp int64 `json:"data"`
 }
 
-type blockSend struct {
-	m *message
-	c chan bool
+type message struct {
+	event string
+	data  interface{}
 }
 
 // Create a new connection using the specified socket and router.
 func newConnection(s *websocket.Conn, user *User) {
 	c := &Connection{
-		socket:     s,
-		send:       make(chan *message, SENDCHANNELSIZE),
-		blocksend:  make(chan *blockSend),
-		stop:       make(chan bool),
-		user:       user,
-		lastactive: time.Now(),
-		ping:       make(chan time.Time, 2),
-		RWMutex:    sync.RWMutex{},
+		socket:         s,
+		send:           make(chan *message, SENDCHANNELSIZE),
+		sendmarshalled: make(chan *message),
+		blocksend:      make(chan *message),
+		stop:           make(chan bool),
+		user:           user,
+		lastactive:     time.Now(),
+		ping:           make(chan time.Time, 2),
+		RWMutex:        sync.RWMutex{},
 	}
 
 	go c.writePumpText()
@@ -91,10 +93,36 @@ func newConnection(s *websocket.Conn, user *User) {
 
 func (c *Connection) readPumpText() {
 	defer func() {
+		if c.user != nil {
+			c.user.Lock()
+			userDisconnect(c.user)
+			c.user.connections = removeConnFromArray(c.user.connections, c)
+			c.user.Unlock()
+		} else {
+			removeConnection()
+		}
 		c.socket.Close()
 	}()
 
+	if c.user != nil {
+		c.user.Lock()
+		if c.user.connections == nil {
+			c.user.connections = make([]*Connection, 1, 3)
+			c.user.connections[0] = c
+		} else if len(c.user.connections) > 3 {
+			c.user.Unlock()
+			c.SendError("toomanyconnections")
+			c.stop <- true
+			return
+		} else {
+			c.user.connections = append(c.user.connections, c)
+		}
+		addToNameCache(c.user)
+		c.user.Unlock()
+	}
+
 	hub.register <- c
+	c.Names()
 	c.Join() // broadcast to the chat that a user has connected
 
 	message := make([]byte, MAXMESSAGESIZE)
@@ -149,6 +177,7 @@ func (c *Connection) writePumpText() {
 		hub.unregister <- c
 		c.socket.Close() // Necessary to force reading to stop, will start the cleanup
 	}()
+
 	for {
 		select {
 		case t, ok := <-c.ping:
@@ -167,31 +196,27 @@ func (c *Connection) writePumpText() {
 			}
 		case <-c.stop:
 			return
-		case wm := <-c.blocksend:
-			message := wm.m
+		case message := <-c.blocksend:
 			if data, err := Marshal(message.data); err == nil {
 				if data, err := Pack(message.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
-						wm.c <- false
 						return
-					} else {
-						wm.c <- true
 					}
-				} else {
-					wm.c <- false
 				}
-			} else {
-				wm.c <- false
 			}
-		case message, ok := <-c.send:
-			if !ok {
-				return
-			}
+		case message := <-c.send:
 			if data, err := Marshal(message.data); err == nil {
 				if data, err := Pack(message.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
+				}
+			}
+		case message := <-c.sendmarshalled:
+			data := message.data.([]byte)
+			if data, err := Pack(message.event, data); err == nil {
+				if err := websocket.Message.Send(c.socket, string(data)); err != nil {
+					return
 				}
 			}
 		}
@@ -204,17 +229,11 @@ func (c *Connection) Emit(event string, data interface{}) {
 		data:  data,
 	}
 }
-func (c *Connection) EmitBlock(event string, data interface{}) (ch chan bool) {
-	ch = make(chan bool)
-
-	c.blocksend <- &blockSend{
-		m: &message{
-			event: event,
-			data:  data,
-		},
-		c: ch,
+func (c *Connection) EmitBlock(event string, data interface{}) {
+	c.blocksend <- &message{
+		event: event,
+		data:  data,
 	}
-
 	return
 }
 func (c *Connection) Broadcast(event string, data *EventDataOut) {
@@ -335,8 +354,11 @@ func (c *Connection) OnPrivmsg(data []byte) {
 	// TODO check if valid utf8, api call? need to be sync so that we know what to return, not a problem, already running in a goroutine
 }
 
-func (c *Connection) Names(names *NamesOut) {
-	c.Emit("NAMES", names)
+func (c *Connection) Names() {
+	c.sendmarshalled <- &message{
+		"NAMES",
+		getNames(),
+	}
 }
 
 func (c *Connection) OnMute(data []byte) {
@@ -519,7 +541,7 @@ func (c *Connection) Quit() {
 }
 
 func (c *Connection) SendError(identifier string) {
-	<-c.EmitBlock("ERR", identifier)
+	c.EmitBlock("ERR", identifier)
 }
 
 func (c *Connection) Refresh() {
