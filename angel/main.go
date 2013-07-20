@@ -56,6 +56,7 @@ func main() {
 
 	restartdelay := 5 * time.Second // the delay when restarting too fast
 	var restarttimer *time.Timer
+	var restarting bool
 
 again:
 	cmd := exec.Command(binpath)
@@ -87,57 +88,26 @@ again:
 	})()
 
 	time.Sleep(1 * time.Second)
-	go checkResponse(serverurl, origin, shouldrestart)
+	restarting = false
 
 	for {
 		select {
 		case <-t.C:
 			go checkNames(serverurl, origin, shouldrestart)
 		case <-shouldrestart:
-			cmd.Process.Signal(syscall.SIGINT)
+			if !restarting {
+				cmd.Process.Signal(syscall.SIGINT)
+			}
 			// TODO move pprof files out of the dir
 		case <-processexited:
-			if time.Now().Sub(laststarttime) < restartdelay {
-				P("Tried restarting the chat process too fast, sleeping for: ", restartdelay/time.Second, " seconds")
-				time.Sleep(restartdelay)
-				restartdelay += time.Second
-			}
-			goto again
-		}
-	}
-}
-
-func checkResponse(serverurl, origin string, shouldrestart chan bool) {
-	ws, err := websocket.Dial(serverurl, "", origin)
-	if err != nil {
-		D("Unable to connect to ", serverurl)
-		shouldrestart <- true
-		return
-	}
-
-	defer ws.Close()
-
-	buff := make([]byte, 512)
-	for {
-		// the pinginterval is 10 seconds on the server side, we HAVE TO receive something
-		ws.SetReadDeadline(time.Now().Add(25 * time.Second))
-		len, err := ws.Read(buff)
-		if err != nil {
-			D("Unable to read from the websocket", err)
-			shouldrestart <- true
-			return
-		}
-
-		D("checkResponse received:", string(buff[:len]))
-
-		if string(buff[:4]) == "PING" {
-			ws.SetWriteDeadline(time.Now().Add(time.Second))
-			buff[1] = 'O'
-			_, err = ws.Write(buff[:len])
-			if err != nil {
-				P("Unable to write to the websocket", err)
-				shouldrestart <- true
-				return
+			if !restarting {
+				restarting = true
+				if time.Now().Sub(laststarttime) < restartdelay {
+					P("Tried restarting the chat process too fast, sleeping for: ", restartdelay/time.Second, " seconds")
+					time.Sleep(restartdelay)
+					restartdelay += time.Second
+				}
+				goto again
 			}
 		}
 	}
@@ -152,8 +122,10 @@ func checkNames(serverurl, origin string, shouldrestart chan bool) {
 	}
 
 	defer ws.Close()
-
 	buff := make([]byte, 512)
+	start := time.Now()
+
+checkagain:
 	ws.SetReadDeadline(time.Now().Add(time.Second))
 	_, err = ws.Read(buff)
 	if err != nil {
@@ -162,11 +134,15 @@ func checkNames(serverurl, origin string, shouldrestart chan bool) {
 		return
 	}
 
-	if string(buff[:5]) != "NAMES" && string(buff[:4]) != "JOIN" {
-		P("Unexpected data received: ", string(buff))
+	if string(buff[:5]) != "NAMES" {
+		goto checkagain
+	}
+
+	if time.Since(start) > 500*time.Millisecond {
+		D("Didnt receive NAMES in 500ms, restarting")
 		shouldrestart <- true
 		return
 	}
 
-	D("checkNames received NAMES or JOIN, exiting, data was:", string(buff))
+	D("checkNames OK")
 }
