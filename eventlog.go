@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"github.com/go-sql-driver/mysql"
 	"time"
 )
 
@@ -87,35 +86,4 @@ func logEvent(userid Userid, event string, data *EventDataOut) {
 		D("Unable to insert event: ", err)
 	}
 
-}
-
-func logBan(userid Userid, targetuserid Userid, ban *BanIn, ip string) {
-
-	ipaddress := &sql.NullString{}
-	if ban.BanIP && len(ip) != 0 {
-		ipaddress.String = ip
-		ipaddress.Valid = true
-	}
-	starttimestamp := time.Now().UTC()
-
-	endtimestamp := &mysql.NullTime{}
-	if !ban.Ispermanent {
-		endtimestamp.Time = starttimestamp.Add(time.Duration(ban.Duration))
-		endtimestamp.Valid = true
-	}
-
-	_, err := banstatement.Exec(userid, targetuserid, ipaddress, ban.Reason, starttimestamp, endtimestamp)
-
-	if err != nil {
-		D("Unable to insert ban: ", err)
-	}
-
-}
-
-func logUnban(targetuserid Userid) {
-	_, err := unbanstatement.Exec(targetuserid)
-
-	if err != nil {
-		D("Unable to insert ban: ", err)
-	}
 }
