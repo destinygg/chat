@@ -74,6 +74,7 @@ func (u *User) isSubscriber() bool {
 	return u.features.Get(ISSUBSCRIBER | ISADMIN | ISMODERATOR | ISVIP)
 }
 
+// isBot checks if the user is exempt from ratelimiting
 func (u *User) isBot() bool {
 	return u.features.Get(ISBOT)
 }
@@ -99,9 +100,8 @@ func (u *User) setFeatures(features []string) {
 		case "bot":
 			u.features.Set(ISBOT)
 		default:
-			fb := []byte(feature)
-			if string(fb[:5]) == "flair" {
-				flair, err := strconv.Atoi(string(fb[5:]))
+			if feature[:5] == "flair" {
+				flair, err := strconv.Atoi(feature[5:])
 				if err != nil {
 					D("Could not parse unknown feature:", feature, err)
 					continue
@@ -332,10 +332,10 @@ func getUser(r *http.Request) (u *User, banned bool) {
 		return
 	}
 
-	uc := make(chan *User)
+	uc := make(chan *User, 1)
 	hub.getuser <- &uidnickfeaturechan{userid, su.Username, su.Features, uc}
 	u = <-uc
 
-	D("User connected with id:", u.id, "and nick:", u.nick, "features:", u.simplified.Features, ip)
+	//D("User connected with id:", u.id, "and nick:", u.nick, "features:", u.simplified.Features, ip)
 	return
 }

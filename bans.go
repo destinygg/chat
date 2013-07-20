@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"github.com/go-sql-driver/mysql"
-	"net"
 	"time"
 )
 
@@ -169,27 +168,16 @@ func unbanUserid(userid Userid) {
 	D("Unbanned userid: ", userid)
 }
 
-func isUserBanned(conn *Connection) bool {
-
-	ip := conn.socket.RemoteAddr().(*net.TCPAddr).IP.String()
-	var uid Userid
-	if conn.user != nil {
-		uid = conn.user.id
-	}
-
-	return isUseridIPBanned(ip, uid)
-}
-
 func isUseridIPBanned(ip string, uid Userid) bool {
-	banned := make(chan bool)
-	ipbanned <- &ipBan{ip, banned}
-	res := <-banned
-	if res {
+	c := make(chan bool, 1)
+	ipbanned <- &ipBan{ip, c}
+	res := <-c
+	if res || uid == 0 {
 		return res
 	}
 
-	useridbanned <- &useridBan{uid, banned}
-	res = <-banned
+	useridbanned <- &useridBan{uid, c}
+	res = <-c
 	return res
 }
 

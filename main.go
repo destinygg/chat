@@ -130,6 +130,7 @@ func Handler(socket *websocket.Conn) {
 	defer socket.Close()
 	r := socket.Request()
 	user, banned := getUser(r)
+
 	if banned {
 		websocket.Message.Send(socket, `ERR "banned"`)
 		return

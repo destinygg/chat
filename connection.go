@@ -28,6 +28,7 @@ type Connection struct {
 	send           chan *message
 	sendmarshalled chan *message
 	blocksend      chan *message
+	banned         chan bool
 	stop           chan bool
 	user           *User
 	lastactive     time.Time
@@ -79,6 +80,7 @@ func newConnection(s *websocket.Conn, user *User) {
 		send:           make(chan *message, SENDCHANNELSIZE),
 		sendmarshalled: make(chan *message),
 		blocksend:      make(chan *message),
+		banned:         make(chan bool, 1),
 		stop:           make(chan bool),
 		user:           user,
 		lastactive:     time.Now(),
@@ -120,6 +122,8 @@ func (c *Connection) readPumpText() {
 		}
 		addToNameCache(c.user)
 		c.user.Unlock()
+	} else {
+		addConnection()
 	}
 
 	hub.register <- c
@@ -194,6 +198,9 @@ func (c *Connection) writePumpText() {
 				// disconnect user, stop goroutines
 				return
 			}
+		case <-c.banned:
+			c.SendError("banned")
+			return
 		case <-c.stop:
 			return
 		case message := <-c.blocksend:
@@ -374,7 +381,6 @@ func (c *Connection) OnMute(data []byte) {
 	}
 
 	ok, uid := c.canModerateUser(mute.Data)
-	D(c.user.nick, " is trying to mute ", mute.Data, " uid: ", uid, " ok: ", ok, "duration: ", mute.Duration)
 	if !ok || uid == 0 {
 		c.SendError("nopermission")
 		return
@@ -410,7 +416,7 @@ func (c *Connection) OnUnmute(data []byte) {
 
 	uid, _ := getUseridForNick(user.Data)
 	if uid == 0 {
-		c.SendError("nopermission")
+		c.SendError("notfound")
 		return
 	}
 
@@ -476,7 +482,7 @@ func (c *Connection) OnUnban(data []byte) {
 
 	uid, _ := getUseridForNick(user.Data)
 	if uid == 0 {
-		c.SendError("nopermission")
+		c.SendError("notfound")
 		return
 	}
 
@@ -488,8 +494,7 @@ func (c *Connection) OnUnban(data []byte) {
 }
 
 func (c *Connection) Banned() {
-	c.SendError("banned")
-	c.stop <- true
+	c.banned <- true
 }
 
 func (c *Connection) OnSubonly(data []byte) {

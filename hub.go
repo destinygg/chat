@@ -72,8 +72,6 @@ func (hub *Hub) run() {
 				if _, ok := hub.users[c.user.id]; !ok {
 					hub.users[c.user.id] = c.user
 				}
-			} else {
-				addConnection()
 			}
 		case c := <-hub.unregister:
 			hub.remove(c)
@@ -118,8 +116,9 @@ func (hub *Hub) run() {
 			}
 		case stringip := <-hub.ipbans:
 			for c := range hub.connections {
-				pos := strings.LastIndex(c.socket.Request().RemoteAddr, ":")
-				ip := c.socket.Request().RemoteAddr[:pos]
+				addr := c.socket.Request().RemoteAddr
+				pos := strings.LastIndex(addr, ":")
+				ip := addr[:pos]
 				if ip == stringip {
 					c.Banned()
 				}
@@ -129,8 +128,9 @@ func (hub *Hub) run() {
 			if u, ok := hub.users[d.userid]; ok {
 				u.RLock()
 				for _, c := range u.connections {
-					pos := strings.LastIndex(c.socket.Request().RemoteAddr, ":")
-					ip := c.socket.Request().RemoteAddr[:pos]
+					addr := c.socket.Request().RemoteAddr
+					pos := strings.LastIndex(addr, ":")
+					ip := addr[:pos]
 					ips = append(ips, ip)
 				}
 				u.RUnlock()
@@ -171,9 +171,9 @@ func (hub *Hub) remove(c *Connection) {
 
 func (hub *Hub) getIPsForUserid(userid Userid) []string {
 	// TODO if user not connected get ips from redis, also means need to store ips there
-	m := make(chan []string)
-	hub.getips <- useridips{userid, m}
-	return <-m
+	c := make(chan []string, 1)
+	hub.getips <- useridips{userid, c}
+	return <-c
 }
 
 func (hub *Hub) canUserSpeak(c *Connection) bool {

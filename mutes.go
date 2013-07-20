@@ -91,7 +91,7 @@ func isUserMuted(conn *Connection) bool {
 	if conn.user == nil {
 		return true
 	}
-	muted := make(chan bool)
+	muted := make(chan bool, 1)
 	useridmuted <- &useridMuted{conn.user.id, muted}
 	return <-muted
 }
