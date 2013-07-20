@@ -166,7 +166,6 @@ func (hub *Hub) remove(c *Connection) {
 		c.user.RUnlock()
 	}
 	delete(hub.connections, c)
-	c.socket.Close()
 }
 
 func (hub *Hub) getIPsForUserid(userid Userid) []string {

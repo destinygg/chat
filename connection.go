@@ -80,7 +80,7 @@ func newConnection(s *websocket.Conn, user *User) {
 		send:           make(chan *message, SENDCHANNELSIZE),
 		sendmarshalled: make(chan *message),
 		blocksend:      make(chan *message),
-		banned:         make(chan bool, 1),
+		banned:         make(chan bool, 8),
 		stop:           make(chan bool),
 		user:           user,
 		lastactive:     time.Now(),
@@ -199,7 +199,7 @@ func (c *Connection) writePumpText() {
 				return
 			}
 		case <-c.banned:
-			c.SendError("banned")
+			websocket.Message.Send(c.socket, `ERR "banned"`)
 			return
 		case <-c.stop:
 			return
