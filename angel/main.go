@@ -43,7 +43,7 @@ func main() {
 
 	shouldrestart := make(chan bool)
 	processexited := make(chan bool)
-	t := time.NewTicker(500 * time.Millisecond)
+	t := time.NewTicker(time.Second)
 	sct := make(chan os.Signal, 1)
 	signal.Notify(sct, syscall.SIGTERM)
 
