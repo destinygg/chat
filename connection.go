@@ -93,6 +93,7 @@ func newConnection(s *websocket.Conn, user *User) {
 
 func (c *Connection) readPumpText() {
 	defer func() {
+		c.Quit()
 		if c.user != nil {
 			c.user.Lock()
 			userDisconnect(c.user)
@@ -173,7 +174,6 @@ func (c *Connection) readPumpText() {
 
 func (c *Connection) writePumpText() {
 	defer func() {
-		c.Quit()
 		hub.unregister <- c
 		c.socket.Close() // Necessary to force reading to stop, will start the cleanup
 	}()

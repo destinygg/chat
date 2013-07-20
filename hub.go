@@ -1,7 +1,6 @@
 package main
 
 import (
-	"net"
 	"strings"
 	"sync"
 	"time"
@@ -119,7 +118,9 @@ func (hub *Hub) run() {
 			}
 		case stringip := <-hub.ipbans:
 			for c := range hub.connections {
-				if connip := c.socket.RemoteAddr().(*net.TCPAddr).IP.String(); connip == stringip {
+				pos := strings.LastIndex(c.socket.Request().RemoteAddr, ":")
+				ip := c.socket.Request().RemoteAddr[:pos]
+				if ip == stringip {
 					c.Banned()
 				}
 			}
@@ -128,7 +129,8 @@ func (hub *Hub) run() {
 			if u, ok := hub.users[d.userid]; ok {
 				u.RLock()
 				for _, c := range u.connections {
-					ip := c.socket.RemoteAddr().(*net.TCPAddr).IP.String()
+					pos := strings.LastIndex(c.socket.Request().RemoteAddr, ":")
+					ip := c.socket.Request().RemoteAddr[:pos]
 					ips = append(ips, ip)
 				}
 				u.RUnlock()
