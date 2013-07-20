@@ -1,6 +1,5 @@
 chat
 settings.cfg
 *.sublime-*
-user.go
 deploy.sh
 *.pprof
