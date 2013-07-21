@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/vmihailenco/redis"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -328,28 +330,56 @@ func getUser(r *http.Request) (u *User, banned bool) {
 
 	pos := strings.LastIndex(r.RemoteAddr, ":")
 	ip := r.RemoteAddr[:pos]
+	var authdata []byte
+	var su sessionUser
 
 	// set up the user here from redis if the user has a session cookie
 	sessionid, err := r.Cookie("sid")
-	if err != nil || !cookievalid.MatchString(sessionid.Value) {
-		banned = isUseridIPBanned(ip, 0)
-		return
+	if err == nil {
+		if !cookievalid.MatchString(sessionid.Value) {
+			banned = isUseridIPBanned(ip, 0)
+			return
+		}
+
+		sess := rds.Get(fmt.Sprintf("CHAT:%v", sessionid.Value))
+		if sess.Err() != nil {
+			banned = isUseridIPBanned(ip, 0)
+			return
+		}
+		authdata = []byte(sess.Val())
+
+	} else {
+
+		// try authtoken auth
+		authtoken, err := r.Cookie("authtoken")
+		if err != nil || !cookievalid.MatchString(authtoken.Value) {
+			banned = isUseridIPBanned(ip, 0)
+			return
+		}
+
+		resp, err := http.PostForm(authtokenurl, url.Values{"authtoken": {authtoken.Value}})
+		if err != nil || resp.StatusCode != 200 {
+			D("Unable to call authtokenurl", err, resp.StatusCode)
+			banned = isUseridIPBanned(ip, 0)
+			return
+		}
+
+		authdata, err = ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+
 	}
 
-	sess := rds.Get(fmt.Sprintf("CHAT:%v", sessionid.Value))
-	if sess.Err() != nil {
-		banned = isUseridIPBanned(ip, 0)
-		return
-	}
-
-	var su sessionUser
-	err = json.Unmarshal([]byte(sess.Val()), &su)
+	err = json.Unmarshal(authdata, &su)
 	if err != nil {
-		B("Unable to unmarshal string: ", sess.Val())
+		D("Unable to unmarshal string: ", string(authdata))
+		banned = isUseridIPBanned(ip, 0)
+		return
 	}
 
 	id, err := strconv.ParseInt(su.UserId, 10, 32)
 	if err != nil {
+		D("Unable to parse UserId", err, su.UserId)
+		banned = isUseridIPBanned(ip, 0)
 		return
 	}
 	userid := Userid(id)
@@ -363,6 +393,5 @@ func getUser(r *http.Request) (u *User, banned bool) {
 	hub.getuser <- &uidnickfeaturechan{userid, su.Username, su.Features, uc}
 	u = <-uc
 
-	//D("User connected with id:", u.id, "and nick:", u.nick, "features:", u.simplified.Features, ip)
 	return
 }
