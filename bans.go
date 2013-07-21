@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"github.com/go-sql-driver/mysql"
+	"github.com/vmihailenco/redis"
 	"time"
 )
 
@@ -49,17 +50,9 @@ func initBans() {
 		make(map[Userid][]string),
 	}
 
-	c, err := rds.PubSubClient()
-	if err != nil {
-		B("Unable to create redis pubsub client: ", err)
-	}
-	refreshban, err := c.Subscribe("refreshbans")
-	if err != nil {
-		B("Unable to subscribe to the redis refreshbans channel: ", err)
-	}
-
 	go (func() {
 		loadActiveBans()
+		refreshban := setupRefreshBans()
 		ct := time.NewTicker(CLEANMUTESBANSPERIOD)
 		for {
 			select {
@@ -95,14 +88,7 @@ func initBans() {
 			case m := <-refreshban:
 				if m.Err != nil {
 					D("Error receivong from redis pub/sub channel refreshbans")
-					c, err := rds.PubSubClient()
-					if err != nil {
-						B("Unable to create redis pubsub client: ", err)
-					}
-					refreshban, err = c.Subscribe("refreshbans")
-					if err != nil {
-						B("Unable to subscribe to the redis refreshbans channel: ", err)
-					}
+					refreshban = setupRefreshBans()
 				} else {
 					D("Refreshing bans")
 					loadActiveBans()
@@ -111,6 +97,23 @@ func initBans() {
 		}
 	})()
 
+}
+
+func setupRefreshBans() chan *redis.Message {
+	c, err := rds.PubSubClient()
+	if err != nil {
+		B("Unable to create redis pubsub client: ", err)
+		time.Sleep(500 * time.Millisecond)
+		return setupRefreshBans()
+	}
+	refreshban, err := c.Subscribe("refreshbans")
+	if err != nil {
+		B("Unable to subscribe to the redis refreshbans channel: ", err)
+		time.Sleep(500 * time.Millisecond)
+		return setupRefreshBans()
+	}
+
+	return refreshban
 }
 
 func cleanBans() {

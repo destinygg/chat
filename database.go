@@ -14,6 +14,9 @@ func initDatabase(dbtype string, dbdsn string) {
 	err2 := db.Ping()
 	if err != nil || err2 != nil {
 		B("Could not connect to database: ", err, err2)
+		time.Sleep(time.Second)
+		initDatabase(dbtype, dbdsn)
+		return
 	}
 	db.SetMaxIdleConns(10) // totally made up value
 

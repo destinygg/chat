@@ -34,6 +34,11 @@ func (et ErrorTrace) Error() string {
 func B(v ...interface{}) {
 	ts := time.Now().Format("2006-02-01 15:04:05: ")
 	println(ts, NewErrorTrace(v...).Error())
+}
+
+func F(v ...interface{}) {
+	ts := time.Now().Format("2006-02-01 15:04:05: ")
+	println(ts, NewErrorTrace(v...).Error())
 	panic("-----")
 }
 

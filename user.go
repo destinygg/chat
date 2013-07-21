@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/vmihailenco/redis"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -206,19 +207,14 @@ func initUsers() {
 	})()
 
 	go (func() {
-
-	restartpubsub:
 		// goroutine to watch for messages that signal that a users data was modified
-		psc, err := rds.PubSubClient()
-		if err != nil {
-			B("Unable to create redis pubsub client: ", err)
-		}
-		refreshuser, err := psc.Subscribe("refreshuser")
-		if err != nil {
-			B("Unable to subscribe to the redis refreshuser channel: ", err)
-		}
-
+		refreshuser := setupRefreshUser()
 		for msg := range refreshuser {
+			if msg.Err != nil {
+				D("Error receivong from redis pub/sub channel refreshbans")
+				refreshuser = setupRefreshUser()
+				continue
+			}
 			if len(msg.Message) == 0 { // wtf, a spurious message
 				continue
 			}
@@ -226,7 +222,7 @@ func initUsers() {
 			D("got refreshuser message: ", msg.Message)
 
 			var su sessionUser
-			err = json.Unmarshal([]byte(msg.Message), &su)
+			err := json.Unmarshal([]byte(msg.Message), &su)
 			if err != nil {
 				D("Unable to unmarshal sessionuser string: ", msg.Message)
 				continue
@@ -248,10 +244,25 @@ func initUsers() {
 			addnickuid <- &nickuidprot{strings.ToLower(su.Username), uidprot{Userid(uid), protected}}
 			hub.refreshuser <- Userid(uid)
 		}
-		D("REDIS PUBSUB CHANNEL CLOSED")
-		goto restartpubsub
 	})()
 
+}
+
+func setupRefreshUser() chan *redis.Message {
+	c, err := rds.PubSubClient()
+	if err != nil {
+		B("Unable to create redis pubsub client: ", err)
+		time.Sleep(500 * time.Millisecond)
+		return setupRefreshUser()
+	}
+	refreshuser, err := c.Subscribe("refreshuser")
+	if err != nil {
+		B("Unable to subscribe to the redis refreshuser channel: ", err)
+		time.Sleep(500 * time.Millisecond)
+		return setupRefreshUser()
+	}
+
+	return refreshuser
 }
 
 func loadUserids() {

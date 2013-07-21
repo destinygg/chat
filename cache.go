@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/vmihailenco/redis"
+	"time"
 )
 
 var rds *redis.Client
@@ -25,5 +26,21 @@ func initRedis(addr string, db int64, pw string) {
 		end
 	`)
 	rdsCircularBufferHash = ret.Val()
+
+	go (func() {
+		t := time.NewTicker(time.Minute)
+		for {
+			select {
+			case <-t.C:
+				ping := rds.Ping()
+				if ping.Err() != nil || ping.Val() != "PONG" {
+					D("Could not ping redis: ", ping.Err())
+					rds.Close()
+					initRedis(addr, db, pw)
+					return
+				}
+			}
+		}
+	})()
 
 }
