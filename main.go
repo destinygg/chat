@@ -84,7 +84,7 @@ func main() {
 	}
 	runtime.GOMAXPROCS(int(processes))
 	go (func() {
-		t := time.NewTimer(time.Minute)
+		t := time.NewTicker(time.Minute)
 		for {
 			select {
 			case <-t.C:

@@ -60,7 +60,7 @@ func initBans() {
 
 	go (func() {
 		loadActiveBans()
-		ct := time.NewTimer(CLEANMUTESBANSPERIOD)
+		ct := time.NewTicker(CLEANMUTESBANSPERIOD)
 		for {
 			select {
 			case <-ct.C:

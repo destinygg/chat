@@ -22,7 +22,7 @@ var (
 func initMutes() {
 	go (func() {
 		loadMutes()
-		t := time.NewTimer(CLEANMUTESBANSPERIOD)
+		t := time.NewTicker(CLEANMUTESBANSPERIOD)
 		for {
 			select {
 			case d := <-muteuserid:
@@ -39,6 +39,7 @@ func initMutes() {
 				saveMutes()
 			case <-t.C:
 				cleanMutes()
+				saveMutes()
 			}
 		}
 	})()
