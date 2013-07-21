@@ -260,7 +260,7 @@ func initUsers() {
 			userRefresh(user)
 
 			addnickuid <- &nickuidprot{strings.ToLower(su.Username), uidprot{Userid(uid), protected}}
-			hub.refreshuser <- Userid(uid)
+			hub.refreshuser <- &uidnickfeaturechan{Userid(uid), su.Username, su.Features, nil}
 		}
 	})()
 

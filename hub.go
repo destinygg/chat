@@ -15,7 +15,7 @@ type Hub struct {
 	ipbans      chan string
 	getips      chan useridips
 	users       map[Userid]*User
-	refreshuser chan Userid
+	refreshuser chan *uidnickfeaturechan
 	getuser     chan *uidnickfeaturechan
 	subs        map[*Connection]bool
 	submode     bool
@@ -47,7 +47,7 @@ var hub = Hub{
 	ipbans:      make(chan string),
 	getips:      make(chan useridips),
 	users:       make(map[Userid]*User),
-	refreshuser: make(chan Userid),
+	refreshuser: make(chan *uidnickfeaturechan),
 	getuser:     make(chan *uidnickfeaturechan),
 	subs:        make(map[*Connection]bool),
 	submode:     false,
@@ -75,9 +75,12 @@ func (hub *Hub) run() {
 			}
 		case c := <-hub.unregister:
 			hub.remove(c)
-		case userid := <-hub.refreshuser:
-			if u, ok := hub.users[userid]; ok {
+		case d := <-hub.refreshuser:
+			if u, ok := hub.users[d.userid]; ok {
 				u.RLock()
+				u.nick = d.nick
+				u.setFeatures(d.features)
+				u.assembleSimplifiedUser()
 				for _, c := range u.connections {
 					c.Refresh()
 				}
