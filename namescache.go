@@ -4,24 +4,34 @@ import (
 	"time"
 )
 
+type namesCache struct {
+	names            map[Userid]*SimplifiedUser
+	marshallednames  []byte
+	usercount        uint32
+	adduser          chan *User
+	refreshuser      chan *User
+	discuser         chan *User
+	addconnection    chan bool
+	removeconnection chan bool
+	getnames         chan chan []byte
+}
+
 type NamesOut struct {
 	Users       []*SimplifiedUser `json:"users"`
 	Connections uint32            `json:"connectioncount"`
 }
 
-var (
-	names           = make(map[Userid]*SimplifiedUser)
-	usercount       uint32
-	marshallednames []byte
-)
-
-var (
-	adduser          = make(chan *User)
-	discuser         = make(chan *User)
-	addconnection    = make(chan bool)
-	removeconnection = make(chan bool)
-	getnames         = make(chan chan []byte)
-)
+var nc = namesCache{
+	names:            make(map[Userid]*SimplifiedUser),
+	marshallednames:  nil,
+	usercount:        0,
+	adduser:          make(chan *User),
+	refreshuser:      make(chan *User),
+	discuser:         make(chan *User),
+	addconnection:    make(chan bool),
+	removeconnection: make(chan bool),
+	getnames:         make(chan chan []byte),
+}
 
 func initNamesCache() {
 	go (func() {
@@ -29,37 +39,48 @@ func initNamesCache() {
 		for {
 			select {
 			case <-t.C:
-				for k, v := range names {
+				for k, v := range nc.names {
 					if v.Connections <= 0 {
-						delete(names, k)
+						delete(nc.names, k)
 					}
 				}
-			case user := <-adduser:
-				usercount++
-				if su, ok := names[user.id]; ok {
+			case user := <-nc.refreshuser:
+				if su, ok := nc.names[user.id]; ok {
+					su.Nick = user.nick
+					su.Features = user.simplified.Features
+				} else {
+					nc.names[user.id] = &SimplifiedUser{
+						Nick:        user.nick,
+						Features:    user.simplified.Features,
+						Connections: 0,
+					}
+				}
+			case user := <-nc.adduser:
+				nc.usercount++
+				if su, ok := nc.names[user.id]; ok {
 					su.Connections++
 				} else {
-					names[user.id] = &SimplifiedUser{
+					nc.names[user.id] = &SimplifiedUser{
 						Nick:        user.nick,
 						Features:    user.simplified.Features,
 						Connections: 1,
 					}
 				}
 				marshalNames()
-			case user := <-discuser:
-				usercount--
-				if su, ok := names[user.id]; ok {
+			case user := <-nc.discuser:
+				nc.usercount--
+				if su, ok := nc.names[user.id]; ok {
 					su.Connections--
 				}
 				marshalNames()
-			case <-addconnection:
-				usercount++
+			case <-nc.addconnection:
+				nc.usercount++
 				marshalNames()
-			case <-removeconnection:
-				usercount--
+			case <-nc.removeconnection:
+				nc.usercount--
 				marshalNames()
-			case r := <-getnames:
-				r <- marshallednames
+			case r := <-nc.getnames:
+				r <- nc.marshallednames
 			}
 		}
 	})()
@@ -67,38 +88,42 @@ func initNamesCache() {
 
 func marshalNames() {
 
-	users := make([]*SimplifiedUser, 0, len(names))
-	for _, su := range names {
+	users := make([]*SimplifiedUser, 0, len(nc.names))
+	for _, su := range nc.names {
 		if su.Connections > 0 {
 			users = append(users, su)
 		}
 	}
 
-	marshallednames, _ = Marshal(&NamesOut{
+	nc.marshallednames, _ = Marshal(&NamesOut{
 		Users:       users,
-		Connections: usercount,
+		Connections: nc.usercount,
 	})
 
 }
 
 func getNames() []byte {
 	reply := make(chan []byte, 1)
-	getnames <- reply
+	nc.getnames <- reply
 	return <-reply
 }
 
 func addToNameCache(user *User) {
-	adduser <- user
+	nc.adduser <- user
 }
 
 func userDisconnect(user *User) {
-	discuser <- user
+	nc.discuser <- user
+}
+
+func userRefresh(user *User) {
+	nc.refreshuser <- user
 }
 
 func addConnection() {
-	addconnection <- true
+	nc.addconnection <- true
 }
 
 func removeConnection() {
-	removeconnection <- true
+	nc.removeconnection <- true
 }

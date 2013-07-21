@@ -241,6 +241,22 @@ func initUsers() {
 				continue
 			}
 
+			// names cache user refresh, not actually used in the hub
+			user := &User{
+				id:              Userid(uid),
+				nick:            su.Username,
+				features:        BitField{},
+				lastmessage:     nil,
+				lastmessagetime: time.Time{},
+				lastactive:      time.Time{},
+				delayscale:      1,
+				simplified:      nil,
+				connections:     nil,
+				RWMutex:         sync.RWMutex{},
+			}
+			user.assembleSimplifiedUser()
+			userRefresh(user)
+
 			addnickuid <- &nickuidprot{strings.ToLower(su.Username), uidprot{Userid(uid), protected}}
 			hub.refreshuser <- Userid(uid)
 		}
