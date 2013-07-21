@@ -389,6 +389,7 @@ func getUser(r *http.Request) (u *User, banned bool) {
 		return
 	}
 
+	cacheIPForUser(userid, ip)
 	uc := make(chan *User, 1)
 	hub.getuser <- &uidnickfeaturechan{userid, su.Username, su.Features, uc}
 	u = <-uc

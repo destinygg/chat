@@ -149,9 +149,13 @@ func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 	logBan(userid, targetuserid, ban, "")
 
 	if ban.BanIP {
-		ips := hub.getIPsForUserid(targetuserid)
+		ips := getIPCacheForUser(targetuserid)
 		if len(ips) == 0 {
-			D("No ips found for user", targetuserid)
+			D("No ips found in cache for user", targetuserid)
+			ips = hub.getIPsForUserid(targetuserid)
+			if len(ips) == 0 {
+				D("No ips found for user (offline)", targetuserid)
+			}
 		}
 		for _, ip := range ips {
 			banip <- &banIp{targetuserid, ip, expiretime}
