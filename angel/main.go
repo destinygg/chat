@@ -116,7 +116,7 @@ again:
 func checkNames(serverurl, origin string, shouldrestart chan bool) {
 	ws, err := websocket.Dial(serverurl, "", origin)
 	if err != nil {
-		D("Unable to connect to ", serverurl)
+		P("Unable to connect to ", serverurl)
 		shouldrestart <- true
 		return
 	}
@@ -129,7 +129,7 @@ checkagain:
 	ws.SetReadDeadline(time.Now().Add(time.Second))
 	_, err = ws.Read(buff)
 	if err != nil {
-		D("Unable to read from the websocket ", err)
+		P("Unable to read from the websocket ", err)
 		shouldrestart <- true
 		return
 	}
@@ -139,10 +139,9 @@ checkagain:
 	}
 
 	if time.Since(start) > 500*time.Millisecond {
-		D("Didnt receive NAMES in 500ms, restarting")
+		P("Didnt receive NAMES in 500ms, restarting")
 		shouldrestart <- true
 		return
 	}
 
-	D("checkNames OK")
 }
