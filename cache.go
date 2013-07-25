@@ -40,9 +40,6 @@ func initRedis(addr string, db int64, pw string) {
 
 	ret = rds.ScriptLoad(`
 		local key, value, maxlength = KEYS[1], ARGV[1], 3
-		if not maxlength then
-			return {err = "INVALID ARGUMENTS"}
-		end
 		
 		local count = redis.call("ZCOUNT", key, 1, maxlength)
 		local existingscore = redis.call("ZSCORE", key, value)
@@ -98,12 +95,12 @@ func initRedis(addr string, db int64, pw string) {
 }
 
 func cacheIPForUser(userid Userid, ip string) {
-	key := []string{fmt.Sprintf("user-%d", userid)}
+	key := []string{fmt.Sprintf("CHAT:userips-%d", userid)}
 	rds.EvalSha(rdsSetIPCache, key, []string{ip})
 }
 
 func getIPCacheForUser(userid Userid) []string {
-	key := []string{fmt.Sprintf("user-%d", userid)}
+	key := []string{fmt.Sprintf("CHAT:userips-%d", userid)}
 	res := rds.EvalSha(rdsGetIPCache, key, []string{})
 	if res.Err() != nil {
 		return []string{}
