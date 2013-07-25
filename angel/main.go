@@ -43,7 +43,7 @@ func main() {
 
 	shouldrestart := make(chan bool)
 	processexited := make(chan bool)
-	t := time.NewTicker(time.Second)
+	t := time.NewTicker(2 * time.Second)
 	sct := make(chan os.Signal, 1)
 	signal.Notify(sct, syscall.SIGTERM)
 
@@ -54,25 +54,12 @@ func main() {
 		}
 	})()
 
-	restartdelay := 5 * time.Second // the delay when restarting too fast
-	var restarttimer *time.Timer
 	var restarting bool
 
 again:
 	cmd := exec.Command(binpath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
-	laststarttime := time.Now()
-	if restartdelay > 5*time.Second {
-		if restarttimer != nil {
-			restarttimer.Stop()
-		}
-
-		restarttimer = time.AfterFunc(5*time.Minute, func() {
-			restartdelay = 5 * time.Second
-		})
-	}
 
 	if err := cmd.Start(); err != nil {
 		P("Error starting", binpath, err)
@@ -87,7 +74,7 @@ again:
 		processexited <- true
 	})()
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 	restarting = false
 
 	for {
@@ -97,16 +84,12 @@ again:
 		case <-shouldrestart:
 			if !restarting {
 				cmd.Process.Signal(syscall.SIGINT)
+			} else {
+				P("Received from shouldrestart but already restarting, ignored")
 			}
 			// TODO move pprof files out of the dir
 		case <-processexited:
 			if !restarting {
-				restarting = true
-				if time.Now().Sub(laststarttime) < restartdelay {
-					P("Tried restarting the chat process too fast, sleeping for: ", restartdelay/time.Second, " seconds")
-					time.Sleep(restartdelay)
-					restartdelay += time.Second
-				}
 				goto again
 			}
 		}
@@ -134,14 +117,14 @@ checkagain:
 		return
 	}
 
-	if string(buff[:5]) != "NAMES" {
-		goto checkagain
-	}
-
 	if time.Since(start) > 500*time.Millisecond {
 		P("Didnt receive NAMES in 500ms, restarting")
 		shouldrestart <- true
 		return
+	}
+
+	if string(buff[:5]) != "NAMES" {
+		goto checkagain
 	}
 
 }
