@@ -437,27 +437,30 @@ func (c *Connection) OnBan(data []byte) {
 		return
 	}
 
-	if c.user == nil || !c.user.isModerator() {
+	if c.user == nil {
 		c.SendError("nopermission")
 		return
 	}
 
+	if !c.user.isModerator() {
+		D("user tried to ban but not a mod: ", c.user.nick, c.user.id)
+	}
+
 	ok, uid := c.canModerateUser(ban.Nick)
 	if !ok || uid == 0 {
+		D("user tried to ban", ban.Nick, "but couldt find user", ok, uid)
 		c.SendError("nopermission")
+		return
+	}
+
+	reason := strings.TrimSpace(ban.Reason)
+	if utf8.RuneCountInString(reason) == 0 || !utf8.ValidString(reason) {
+		c.SendError("needbanreason")
 		return
 	}
 
 	if ban.Duration == 0 {
 		ban.Duration = int64(DEFAULTBANDURATION)
-	}
-
-	if ban.Ispermanent {
-		reason := strings.TrimSpace(ban.Reason)
-		if utf8.RuneCountInString(reason) == 0 || !utf8.ValidString(reason) {
-			c.SendError("needbanreason")
-			return
-		}
 	}
 
 	banUser(c.user.id, uid, ban)
