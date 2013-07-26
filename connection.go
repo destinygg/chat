@@ -444,6 +444,8 @@ func (c *Connection) OnBan(data []byte) {
 
 	if !c.user.isModerator() {
 		D("user tried to ban but not a mod: ", c.user.nick, c.user.id)
+		c.SendError("nopermission")
+		return
 	}
 
 	ok, uid := c.canModerateUser(ban.Nick)
