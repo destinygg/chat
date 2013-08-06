@@ -25,7 +25,6 @@ const (
 	MAXMESSAGESIZE       = 6144 // 512 max chars in a message, 8bytes per chars possible, plus factor in some protocol overhead
 	SENDCHANNELSIZE      = 16
 	BROADCASTCHANNELSIZE = 256
-	CLEANMUTESBANSPERIOD = 10 * time.Minute
 	DEFAULTBANDURATION   = time.Hour
 	DEFAULTMUTEDURATION  = 10 * time.Minute
 )
@@ -107,6 +106,7 @@ func main() {
 		}).Stop()
 	}
 
+	initWatchdog()
 	initNamesCache()
 	initHub()
 	initDatabase(dbtype, dbdsn)

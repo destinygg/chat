@@ -53,10 +53,14 @@ func initBans() {
 	go (func() {
 		loadActiveBans()
 		refreshban := setupRefreshBans()
-		ct := time.NewTicker(CLEANMUTESBANSPERIOD)
+		t := time.NewTicker(time.Minute)
+		cp := registerWatchdog("ban thread", time.Minute)
+		defer unregisterWatchdog("ban thread")
+
 		for {
 			select {
-			case <-ct.C:
+			case <-t.C:
+				cp <- true
 				cleanBans()
 			case uid := <-unbanuserid:
 				delete(bans.users, uid)
@@ -125,7 +129,7 @@ func cleanBans() {
 			delcount++
 		}
 	}
-	DP("Cleaning bans, expired bans: ", delcount)
+
 	delcount = 0
 	for ip, unbantime := range bans.ips {
 		if unbantime.Before(time.Now().UTC()) {
@@ -133,7 +137,7 @@ func cleanBans() {
 			delcount++
 		}
 	}
-	D("expired ipbans: ", delcount)
+
 }
 
 func banUser(userid Userid, targetuserid Userid, ban *BanIn) {

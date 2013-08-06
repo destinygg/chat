@@ -22,9 +22,13 @@ func initDatabase(dbtype string, dbdsn string) {
 
 	go (func() {
 		t := time.NewTicker(time.Minute)
+		cp := registerWatchdog("database check thread", time.Minute)
+		defer unregisterWatchdog("database check thread")
+
 		for {
 			select {
 			case <-t.C:
+				cp <- true
 				err := db.Ping()
 				if err != nil {
 					B("Could not ping database: ", err)

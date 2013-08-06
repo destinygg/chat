@@ -22,7 +22,10 @@ var (
 func initMutes() {
 	go (func() {
 		loadMutes()
-		t := time.NewTicker(CLEANMUTESBANSPERIOD)
+		t := time.NewTicker(time.Minute)
+		cp := registerWatchdog("mute thread", time.Minute)
+		defer unregisterWatchdog("mute thread")
+
 		for {
 			select {
 			case d := <-muteuserid:
@@ -38,6 +41,7 @@ func initMutes() {
 				delete(mutes, uid)
 				saveMutes()
 			case <-t.C:
+				cp <- true
 				cleanMutes()
 				saveMutes()
 			}
@@ -77,7 +81,6 @@ func cleanMutes() {
 			delcount++
 		}
 	}
-	D("Cleaned mutes, deleted records: ", delcount)
 }
 
 func muteUserid(userid Userid, duration int64) {

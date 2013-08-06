@@ -61,6 +61,10 @@ func initHub() {
 
 func (hub *Hub) run() {
 	pinger := time.NewTicker(PINGINTERVAL)
+	t := time.NewTicker(time.Minute)
+	cp := registerWatchdog("hub thread", time.Minute)
+	defer unregisterWatchdog("hub thread")
+
 	for {
 		select {
 		case c := <-hub.register:
@@ -146,6 +150,8 @@ func (hub *Hub) run() {
 				}
 			}
 		// timeout handling
+		case <-t.C:
+			cp <- true
 		case t := <-pinger.C:
 			for c := range hub.connections {
 				if len(c.ping) < 2 {

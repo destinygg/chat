@@ -195,8 +195,14 @@ func initUsers() {
 	// so that the case does not matter
 	go (func() {
 		loadUserids()
+		t := time.NewTicker(time.Minute)
+		cp := registerWatchdog("userid lookup thread", time.Minute)
+		defer unregisterWatchdog("userid lookup thread")
+
 		for {
 			select {
+			case <-t.C:
+				cp <- true
 			case nu := <-addnickuid:
 				nicklookup[nu.nick] = uidprot{nu.id, nu.protected}
 			case nc := <-getuidfornick:
@@ -211,56 +217,65 @@ func initUsers() {
 	go (func() {
 		// goroutine to watch for messages that signal that a users data was modified
 		refreshuser := setupRefreshUser()
-		for msg := range refreshuser {
-			if msg.Err != nil {
-				D("Error receivong from redis pub/sub channel refreshbans")
-				refreshuser = setupRefreshUser()
-				continue
-			}
-			if len(msg.Message) == 0 { // wtf, a spurious message
-				continue
-			}
+		t := time.NewTicker(time.Minute)
+		cp := registerWatchdog("refreshuser thread", time.Minute)
+		defer unregisterWatchdog("refreshuser thread")
 
-			D("got refreshuser message: ", msg.Message)
-
-			var su sessionUser
-			err := json.Unmarshal([]byte(msg.Message), &su)
-			if err != nil {
-				D("Unable to unmarshal sessionuser string: ", msg.Message)
-				continue
-			}
-
-			var protected bool
-			for _, feature := range su.Features {
-				if feature == "protected" {
-					protected = true
-					break
+		for {
+			select {
+			case <-t.C:
+				cp <- true
+			case msg := <-refreshuser:
+				if msg.Err != nil {
+					D("Error receivong from redis pub/sub channel refreshbans")
+					refreshuser = setupRefreshUser()
+					continue
 				}
-			}
+				if len(msg.Message) == 0 { // wtf, a spurious message
+					continue
+				}
 
-			uid, err := strconv.ParseInt(su.UserId, 10, 32)
-			if err != nil {
-				continue
-			}
+				D("got refreshuser message: ", msg.Message)
 
-			// names cache user refresh, not actually used in the hub
-			user := &User{
-				id:              Userid(uid),
-				nick:            su.Username,
-				features:        BitField{},
-				lastmessage:     nil,
-				lastmessagetime: time.Time{},
-				lastactive:      time.Time{},
-				delayscale:      1,
-				simplified:      nil,
-				connections:     nil,
-				RWMutex:         sync.RWMutex{},
-			}
-			user.assembleSimplifiedUser()
-			userRefresh(user)
+				var su sessionUser
+				err := json.Unmarshal([]byte(msg.Message), &su)
+				if err != nil {
+					D("Unable to unmarshal sessionuser string: ", msg.Message)
+					continue
+				}
 
-			addnickuid <- &nickuidprot{strings.ToLower(su.Username), uidprot{Userid(uid), protected}}
-			hub.refreshuser <- &uidnickfeaturechan{Userid(uid), su.Username, su.Features, nil}
+				var protected bool
+				for _, feature := range su.Features {
+					if feature == "protected" {
+						protected = true
+						break
+					}
+				}
+
+				uid, err := strconv.ParseInt(su.UserId, 10, 32)
+				if err != nil {
+					continue
+				}
+
+				// names cache user refresh, not actually used in the hub
+				user := &User{
+					id:              Userid(uid),
+					nick:            su.Username,
+					features:        BitField{},
+					lastmessage:     nil,
+					lastmessagetime: time.Time{},
+					lastactive:      time.Time{},
+					delayscale:      1,
+					simplified:      nil,
+					connections:     nil,
+					RWMutex:         sync.RWMutex{},
+				}
+				user.assembleSimplifiedUser()
+				userRefresh(user)
+
+				addnickuid <- &nickuidprot{strings.ToLower(su.Username), uidprot{Userid(uid), protected}}
+				hub.refreshuser <- &uidnickfeaturechan{Userid(uid), su.Username, su.Features, nil}
+			}
 		}
 	})()
 

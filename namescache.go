@@ -36,14 +36,13 @@ var nc = namesCache{
 func initNamesCache() {
 	go (func() {
 		t := time.NewTicker(time.Minute)
+		cp := registerWatchdog("namescache thread", time.Minute)
+		defer unregisterWatchdog("namescache thread")
+
 		for {
 			select {
 			case <-t.C:
-				for k, v := range nc.names {
-					if v.Connections <= 0 {
-						delete(nc.names, k)
-					}
-				}
+				cp <- true
 			case user := <-nc.refreshuser:
 				if su, ok := nc.names[user.id]; ok {
 					su.Nick = user.nick
@@ -71,6 +70,9 @@ func initNamesCache() {
 				nc.usercount--
 				if su, ok := nc.names[user.id]; ok {
 					su.Connections--
+					if su.Connections <= 0 {
+						delete(nc.names, user.id)
+					}
 				}
 				marshalNames()
 			case <-nc.addconnection:
