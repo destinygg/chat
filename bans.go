@@ -8,139 +8,142 @@ import (
 )
 
 type Bans struct {
-	users   map[Userid]time.Time
-	ips     map[string]time.Time
-	userips map[Userid][]string
+	users          map[Userid]time.Time
+	ips            map[string]time.Time
+	userips        map[Userid][]string
+	isipbanned     chan *isIPBanned
+	banip          chan *banIP
+	isuseridbanned chan *isUseridBanned
+	banuserid      chan *banUserid
+	unbanuserid    chan Userid
 }
 
-type ipBan struct {
+type isIPBanned struct {
 	ip     string
 	banned chan bool
 }
 
-type banIp struct {
+type banIP struct {
 	userid Userid
 	ip     string
 	t      time.Time
 }
 
-type useridBan struct {
+type isUseridBanned struct {
 	userid Userid
 	banned chan bool
 }
 
-type useridTime struct {
+type banUserid struct {
 	userid Userid
 	t      time.Time
 }
 
 var (
-	bans         Bans
-	ipbanned     = make(chan *ipBan)
-	banip        = make(chan *banIp)
-	useridbanned = make(chan *useridBan)
-	banuserid    = make(chan *useridTime)
-	unbanuserid  = make(chan Userid)
-)
-
-func initBans() {
 	bans = Bans{
 		make(map[Userid]time.Time),
 		make(map[string]time.Time),
 		make(map[Userid][]string),
+		make(chan *isIPBanned),
+		make(chan *banIP),
+		make(chan *isUseridBanned),
+		make(chan *banUserid),
+		make(chan Userid),
 	}
+)
 
-	go (func() {
-		loadActiveBans()
-		refreshban := setupRefreshBans()
-		t := time.NewTicker(time.Minute)
-		cp := registerWatchdog("ban thread", time.Minute)
-		defer unregisterWatchdog("ban thread")
-
-		for {
-			select {
-			case <-t.C:
-				cp <- true
-				cleanBans()
-			case uid := <-unbanuserid:
-				delete(bans.users, uid)
-				for _, ip := range bans.userips[uid] {
-					delete(bans.ips, ip)
-					D("Unbanned IP: ", ip, "for userid:", uid)
-				}
-				bans.userips[uid] = nil
-			case d := <-banuserid:
-				bans.users[d.userid] = d.t
-			case d := <-useridbanned:
-				if t, ok := bans.users[d.userid]; ok {
-					d.banned <- t.After(time.Now().UTC())
-				} else {
-					d.banned <- false
-				}
-			case d := <-banip:
-				bans.ips[d.ip] = d.t
-				if _, ok := bans.userips[d.userid]; !ok {
-					bans.userips[d.userid] = make([]string, 0, 1)
-				}
-				bans.userips[d.userid] = append(bans.userips[d.userid], d.ip)
-			case d := <-ipbanned:
-				if t, ok := bans.ips[d.ip]; ok {
-					d.banned <- t.After(time.Now().UTC())
-				} else {
-					d.banned <- false
-				}
-			case m := <-refreshban:
-				if m.Err != nil {
-					D("Error receivong from redis pub/sub channel refreshbans")
-					refreshban = setupRefreshBans()
-				} else {
-					D("Refreshing bans")
-					loadActiveBans()
-				}
-			}
-		}
-	})()
-
+func initBans() {
+	go bans.run()
 }
 
-func setupRefreshBans() chan *redis.Message {
+func (b *Bans) run() {
+	b.loadActive()
+	refreshban := b.setupRefresh()
+	t := time.NewTicker(time.Minute)
+	cp := registerWatchdog("ban thread", time.Minute)
+	defer unregisterWatchdog("ban thread")
+
+	for {
+		select {
+		case <-t.C:
+			cp <- true
+			b.clean()
+		case uid := <-b.unbanuserid:
+			delete(b.users, uid)
+			for _, ip := range b.userips[uid] {
+				delete(b.ips, ip)
+				D("Unbanned IP: ", ip, "for userid:", uid)
+			}
+			b.userips[uid] = nil
+		case d := <-b.banuserid:
+			b.users[d.userid] = d.t
+		case d := <-b.isuseridbanned:
+			if t, ok := b.users[d.userid]; ok {
+				d.banned <- t.After(time.Now().UTC())
+			} else {
+				d.banned <- false
+			}
+		case d := <-b.banip:
+			b.ips[d.ip] = d.t
+			if _, ok := b.userips[d.userid]; !ok {
+				b.userips[d.userid] = make([]string, 0, 1)
+			}
+			b.userips[d.userid] = append(b.userips[d.userid], d.ip)
+		case d := <-b.isipbanned:
+			if t, ok := b.ips[d.ip]; ok {
+				d.banned <- t.After(time.Now().UTC())
+			} else {
+				d.banned <- false
+			}
+		case m := <-refreshban:
+			if m.Err != nil {
+				D("Error receiving from redis pub/sub channel refreshbans")
+				refreshban = b.setupRefresh()
+			} else {
+				D("Refreshing bans")
+				b.loadActive()
+			}
+		}
+	}
+}
+
+func (b *Bans) setupRefresh() chan *redis.Message {
 	c, err := rds.PubSubClient()
 	if err != nil {
 		B("Unable to create redis pubsub client: ", err)
 		time.Sleep(500 * time.Millisecond)
-		return setupRefreshBans()
+		return b.setupRefresh()
 	}
 	refreshban, err := c.Subscribe("refreshbans")
 	if err != nil {
 		B("Unable to subscribe to the redis refreshbans channel: ", err)
 		time.Sleep(500 * time.Millisecond)
-		return setupRefreshBans()
+		return b.setupRefresh()
 	}
 
 	return refreshban
 }
 
-func cleanBans() {
+func (b *Bans) clean() {
 	delcount := 0
-	for userid, unbantime := range bans.users {
+	for userid, unbantime := range b.users {
 		if unbantime.Before(time.Now().UTC()) {
-			delete(bans.users, userid)
-			bans.userips[userid] = nil
+			delete(b.users, userid)
+			b.userips[userid] = nil
 			delcount++
 		}
 	}
 
 	delcount = 0
-	for ip, unbantime := range bans.ips {
+	for ip, unbantime := range b.ips {
 		if unbantime.Before(time.Now().UTC()) {
-			delete(bans.ips, ip)
+			delete(b.ips, ip)
 			delcount++
 		}
 	}
-
 }
 
-func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
+func (b *Bans) banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 	var expiretime time.Time
 
 	if ban.Ispermanent {
@@ -149,8 +152,8 @@ func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 		expiretime = time.Now().UTC().Add(time.Duration(ban.Duration))
 	}
 
-	banuserid <- &useridTime{targetuserid, expiretime}
-	logBan(userid, targetuserid, ban, "")
+	b.banuserid <- &banUserid{targetuserid, expiretime}
+	b.log(userid, targetuserid, ban, "")
 
 	if ban.BanIP {
 		ips := getIPCacheForUser(targetuserid)
@@ -162,9 +165,9 @@ func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 			}
 		}
 		for _, ip := range ips {
-			banip <- &banIp{targetuserid, ip, expiretime}
+			b.banip <- &banIP{targetuserid, ip, expiretime}
 			hub.ipbans <- ip
-			logBan(userid, targetuserid, ban, ip)
+			b.log(userid, targetuserid, ban, ip)
 			D("IPBanned user", ban.Nick, targetuserid, "with ip:", ip)
 		}
 	}
@@ -173,30 +176,30 @@ func banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 	D("Banned user", ban.Nick, targetuserid)
 }
 
-func unbanUserid(userid Userid) {
-	logUnban(userid)
-	unbanuserid <- userid
+func (b *Bans) unbanUserid(userid Userid) {
+	b.logUnban(userid)
+	b.unbanuserid <- userid
 	D("Unbanned userid: ", userid)
 }
 
-func isUseridIPBanned(ip string, uid Userid) bool {
+func (b *Bans) isUseridIPBanned(ip string, uid Userid) bool {
 	c := make(chan bool, 1)
-	ipbanned <- &ipBan{ip, c}
+	b.isipbanned <- &isIPBanned{ip, c}
 	res := <-c
 	if res || uid == 0 {
 		return res
 	}
 
-	useridbanned <- &useridBan{uid, c}
+	b.isuseridbanned <- &isUseridBanned{uid, c}
 	res = <-c
 	return res
 }
 
-func loadActiveBans() {
+func (b *Bans) loadActive() {
 	// purge all the bans
-	bans.users = make(map[Userid]time.Time)
-	bans.ips = make(map[string]time.Time)
-	bans.userips = make(map[Userid][]string)
+	b.users = make(map[Userid]time.Time)
+	b.ips = make(map[string]time.Time)
+	b.userips = make(map[Userid][]string)
 
 	rows, err := db.Query(`
 		SELECT
@@ -231,20 +234,20 @@ func loadActiveBans() {
 		}
 
 		if ipaddress.Valid {
-			bans.ips[ipaddress.String] = endtimestamp.Time
-			if _, ok := bans.userips[uid]; !ok {
-				bans.userips[uid] = make([]string, 1)
+			b.ips[ipaddress.String] = endtimestamp.Time
+			if _, ok := b.userips[uid]; !ok {
+				b.userips[uid] = make([]string, 0, 1)
 			}
-			bans.userips[uid] = append(bans.userips[uid], ipaddress.String)
+			b.userips[uid] = append(b.userips[uid], ipaddress.String)
 			hub.ipbans <- ipaddress.String
 		} else {
-			bans.users[uid] = endtimestamp.Time
+			b.users[uid] = endtimestamp.Time
 		}
 
 	}
 }
 
-func logBan(userid Userid, targetuserid Userid, ban *BanIn, ip string) {
+func (b *Bans) log(userid Userid, targetuserid Userid, ban *BanIn, ip string) {
 
 	ipaddress := &sql.NullString{}
 	if ban.BanIP && len(ip) != 0 {
@@ -264,10 +267,9 @@ func logBan(userid Userid, targetuserid Userid, ban *BanIn, ip string) {
 	if err != nil {
 		D("Unable to insert ban: ", err)
 	}
-
 }
 
-func logUnban(targetuserid Userid) {
+func (b *Bans) logUnban(targetuserid Userid) {
 	_, err := unbanstatement.Exec(targetuserid)
 
 	if err != nil {

@@ -37,9 +37,9 @@ type Connection struct {
 }
 
 type SimplifiedUser struct {
-	Nick        string    `json:"nick"`
-	Features    *[]string `json:"features,omitempty"`
-	Connections uint8     `json:"connections,omitempty"`
+	Nick        string `json:"nick"`
+	Features    uint32 `json:"features,omitempty"`
+	Connections uint8  `json:"connections,omitempty"`
 }
 
 type EventDataIn struct {
@@ -306,7 +306,7 @@ func (c *Connection) OnMsg(data []byte) {
 		return
 	}
 
-	if isUserMuted(c) {
+	if mutes.isUserMuted(c) {
 		c.SendError("muted")
 		return
 	}
@@ -395,7 +395,7 @@ func (c *Connection) OnMute(data []byte) {
 		return
 	}
 
-	muteUserid(uid, mute.Duration)
+	mutes.muteUserid(uid, mute.Duration)
 	out := c.getEventDataOut()
 	out.Data = mute.Data
 	out.Targetuserid = uid
@@ -420,7 +420,7 @@ func (c *Connection) OnUnmute(data []byte) {
 		return
 	}
 
-	unmuteUserid(uid)
+	mutes.unmuteUserid(uid)
 	out := c.getEventDataOut()
 	out.Data = user.Data
 	out.Targetuserid = uid
@@ -465,7 +465,7 @@ func (c *Connection) OnBan(data []byte) {
 		ban.Duration = int64(DEFAULTBANDURATION)
 	}
 
-	banUser(c.user.id, uid, ban)
+	bans.banUser(c.user.id, uid, ban)
 
 	out := c.getEventDataOut()
 	out.Data = ban.Nick
@@ -491,7 +491,7 @@ func (c *Connection) OnUnban(data []byte) {
 		return
 	}
 
-	unbanUserid(uid)
+	bans.unbanUserid(uid)
 	out := c.getEventDataOut()
 	out.Data = user.Data
 	out.Targetuserid = uid

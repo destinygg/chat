@@ -117,45 +117,9 @@ func (u *User) setFeatures(features []string) {
 }
 
 func (u *User) assembleSimplifiedUser() {
-	featurelock.RLock()
-	f, ok := features[u.features.data]
-	featurelock.RUnlock()
-
-	if !ok {
-		featurelock.Lock()
-		defer featurelock.Unlock()
-		numfeatures := u.features.NumSet()
-		f = make([]string, 0, numfeatures)
-		if u.features.Get(ISPROTECTED) {
-			f = append(f, "protected")
-		}
-		if u.features.Get(ISSUBSCRIBER) {
-			f = append(f, "subscriber")
-		}
-		if u.features.Get(ISVIP) {
-			f = append(f, "vip")
-		}
-		if u.features.Get(ISMODERATOR) {
-			f = append(f, "moderator")
-		}
-		if u.features.Get(ISADMIN) {
-			f = append(f, "admin")
-		}
-		if u.features.Get(ISBOT) {
-			f = append(f, "bot")
-		}
-
-		for i := uint8(7); i < numfeatures; i++ {
-			flair := fmt.Sprintf("flair%d", i-6)
-			f = append(f, flair)
-		}
-
-		features[u.features.data] = f
-	}
-
 	u.simplified = &SimplifiedUser{
 		u.nick,
-		&f,
+		u.features.data,
 		1,
 	}
 }
@@ -270,6 +234,7 @@ func initUsers() {
 					connections:     nil,
 					RWMutex:         sync.RWMutex{},
 				}
+				user.setFeatures(su.Features)
 				user.assembleSimplifiedUser()
 				userRefresh(user)
 
@@ -352,13 +317,13 @@ func getUser(r *http.Request) (u *User, banned bool) {
 	sessionid, err := r.Cookie("sid")
 	if err == nil {
 		if !cookievalid.MatchString(sessionid.Value) {
-			banned = isUseridIPBanned(ip, 0)
+			banned = bans.isUseridIPBanned(ip, 0)
 			return
 		}
 
 		sess := rds.Get(fmt.Sprintf("CHAT:%v", sessionid.Value))
 		if sess.Err() != nil {
-			banned = isUseridIPBanned(ip, 0)
+			banned = bans.isUseridIPBanned(ip, 0)
 			return
 		}
 		authdata = []byte(sess.Val())
@@ -368,14 +333,14 @@ func getUser(r *http.Request) (u *User, banned bool) {
 		// try authtoken auth
 		authtoken, err := r.Cookie("authtoken")
 		if err != nil || !cookievalid.MatchString(authtoken.Value) {
-			banned = isUseridIPBanned(ip, 0)
+			banned = bans.isUseridIPBanned(ip, 0)
 			return
 		}
 
 		resp, err := http.PostForm(authtokenurl, url.Values{"authtoken": {authtoken.Value}})
 		if err != nil || resp.StatusCode != 200 {
 			D("Unable to call authtokenurl", err, resp.StatusCode)
-			banned = isUseridIPBanned(ip, 0)
+			banned = bans.isUseridIPBanned(ip, 0)
 			return
 		}
 
@@ -387,19 +352,19 @@ func getUser(r *http.Request) (u *User, banned bool) {
 	err = json.Unmarshal(authdata, &su)
 	if err != nil {
 		D("Unable to unmarshal string: ", string(authdata))
-		banned = isUseridIPBanned(ip, 0)
+		banned = bans.isUseridIPBanned(ip, 0)
 		return
 	}
 
 	id, err := strconv.ParseInt(su.UserId, 10, 32)
 	if err != nil {
 		D("Unable to parse UserId", err, su.UserId)
-		banned = isUseridIPBanned(ip, 0)
+		banned = bans.isUseridIPBanned(ip, 0)
 		return
 	}
 	userid := Userid(id)
 
-	banned = isUseridIPBanned(ip, userid)
+	banned = bans.isUseridIPBanned(ip, userid)
 	if banned {
 		return
 	}
