@@ -22,8 +22,8 @@ func initDatabase(dbtype string, dbdsn string) {
 
 	go (func() {
 		t := time.NewTicker(time.Minute)
-		cp := registerWatchdog("database check thread", time.Minute)
-		defer unregisterWatchdog("database check thread")
+		cp := watchdog.register("database check thread", time.Minute)
+		defer watchdog.unregister("database check thread")
 
 		for {
 			select {

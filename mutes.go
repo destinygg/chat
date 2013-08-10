@@ -40,8 +40,8 @@ func initMutes() {
 func (m *Mutes) run() {
 	m.load()
 	t := time.NewTicker(time.Minute)
-	cp := registerWatchdog("mute thread", time.Minute)
-	defer unregisterWatchdog("mute thread")
+	cp := watchdog.register("mute thread", time.Minute)
+	defer watchdog.unregister("mute thread")
 
 	for {
 		select {

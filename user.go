@@ -14,13 +14,19 @@ import (
 	"time"
 )
 
+type userTools struct {
+	nicklookup    map[string]uidprot
+	adduser       chan *nickuidprot
+	getuidfornick chan *nickchan
+}
+
 var (
-	nicklookup    = make(map[string]uidprot)
-	addnickuid    = make(chan *nickuidprot)
-	getuidfornick = make(chan *nickchan, 256)
-	cookievalid   = regexp.MustCompile("^[a-z0-9]{32}$")
-	features      = make(map[uint32][]string)
-	featurelock   = sync.RWMutex{}
+	cookievalid = regexp.MustCompile("^[a-z0-9]{32}$")
+	usertools   = userTools{
+		nicklookup:    make(map[string]uidprot),
+		adduser:       make(chan *nickuidprot),
+		getuidfornick: make(chan *nickchan, 256),
+	}
 )
 
 const (
@@ -31,98 +37,6 @@ const (
 	ISSUBSCRIBER = 1 << iota
 	ISBOT        = 1 << iota
 )
-
-type BitField struct {
-	data uint32
-}
-
-func (b *BitField) Get(bitnum uint32) bool {
-	return ((b.data & bitnum) != 0)
-}
-
-func (b *BitField) Set(bitnum uint32) {
-	b.data |= bitnum
-}
-
-func (b *BitField) NumSet() (c uint8) {
-	// Counting bits set, Brian Kernighan's way
-	v := b.data
-	for c = 0; v != 0; c++ {
-		v &= v - 1 // clear the least significant bit set
-	}
-	return
-}
-
-type Userid int32
-type User struct {
-	id              Userid
-	nick            string
-	features        BitField
-	lastmessage     []byte
-	lastmessagetime time.Time
-	lastactive      time.Time
-	delayscale      uint8
-	simplified      *SimplifiedUser
-	connections     []*Connection
-	sync.RWMutex
-}
-
-// isModerator checks if the user can use mod commands
-func (u *User) isModerator() bool {
-	return u.features.Get(ISMODERATOR | ISADMIN | ISBOT)
-}
-
-// isSubscriber checks if the user can speak when the chat is in submode
-func (u *User) isSubscriber() bool {
-	return u.features.Get(ISSUBSCRIBER | ISADMIN | ISMODERATOR | ISVIP)
-}
-
-// isBot checks if the user is exempt from ratelimiting
-func (u *User) isBot() bool {
-	return u.features.Get(ISBOT)
-}
-
-// isProtected checks if the user can be moderated or not
-func (u *User) isProtected() bool {
-	return u.features.Get(ISADMIN | ISPROTECTED)
-}
-
-func (u *User) setFeatures(features []string) {
-	for _, feature := range features {
-		switch feature {
-		case "admin":
-			u.features.Set(ISADMIN)
-		case "moderator":
-			u.features.Set(ISMODERATOR)
-		case "protected":
-			u.features.Set(ISPROTECTED)
-		case "subscriber":
-			u.features.Set(ISSUBSCRIBER)
-		case "vip":
-			u.features.Set(ISVIP)
-		case "bot":
-			u.features.Set(ISBOT)
-		default:
-			if feature[:5] == "flair" {
-				flair, err := strconv.Atoi(feature[5:])
-				if err != nil {
-					D("Could not parse unknown feature:", feature, err)
-					continue
-				}
-				// six proper features, all others are just useless flairs
-				u.features.Set(1 << (6 + uint8(flair)))
-			}
-		}
-	}
-}
-
-func (u *User) assembleSimplifiedUser() {
-	u.simplified = &SimplifiedUser{
-		u.nick,
-		u.features.data,
-		1,
-	}
-}
 
 type uidnickfeaturechan struct {
 	userid   Userid
@@ -157,113 +71,117 @@ func initUsers() {
 	// goroutine for nick<->userid lookup without locks
 	// important detail: all the nicks get normalized to their lowercase form
 	// so that the case does not matter
-	go (func() {
-		loadUserids()
-		t := time.NewTicker(time.Minute)
-		cp := registerWatchdog("userid lookup thread", time.Minute)
-		defer unregisterWatchdog("userid lookup thread")
-
-		for {
-			select {
-			case <-t.C:
-				cp <- true
-			case nu := <-addnickuid:
-				nicklookup[nu.nick] = uidprot{nu.id, nu.protected}
-			case nc := <-getuidfornick:
-				select {
-				case nc.c <- nicklookup[nc.nick]:
-				default:
-				}
-			}
-		}
-	})()
-
-	go (func() {
-		// goroutine to watch for messages that signal that a users data was modified
-		refreshuser := setupRefreshUser()
-		t := time.NewTicker(time.Minute)
-		cp := registerWatchdog("refreshuser thread", time.Minute)
-		defer unregisterWatchdog("refreshuser thread")
-
-		for {
-			select {
-			case <-t.C:
-				cp <- true
-			case msg := <-refreshuser:
-				if msg.Err != nil {
-					D("Error receivong from redis pub/sub channel refreshbans")
-					refreshuser = setupRefreshUser()
-					continue
-				}
-				if len(msg.Message) == 0 { // wtf, a spurious message
-					continue
-				}
-
-				D("got refreshuser message: ", msg.Message)
-
-				var su sessionUser
-				err := json.Unmarshal([]byte(msg.Message), &su)
-				if err != nil {
-					D("Unable to unmarshal sessionuser string: ", msg.Message)
-					continue
-				}
-
-				var protected bool
-				for _, feature := range su.Features {
-					if feature == "protected" {
-						protected = true
-						break
-					}
-				}
-
-				uid, err := strconv.ParseInt(su.UserId, 10, 32)
-				if err != nil {
-					continue
-				}
-
-				// names cache user refresh, not actually used in the hub
-				user := &User{
-					id:              Userid(uid),
-					nick:            su.Username,
-					features:        BitField{},
-					lastmessage:     nil,
-					lastmessagetime: time.Time{},
-					lastactive:      time.Time{},
-					delayscale:      1,
-					simplified:      nil,
-					connections:     nil,
-					RWMutex:         sync.RWMutex{},
-				}
-				user.setFeatures(su.Features)
-				user.assembleSimplifiedUser()
-				userRefresh(user)
-
-				addnickuid <- &nickuidprot{strings.ToLower(su.Username), uidprot{Userid(uid), protected}}
-				hub.refreshuser <- &uidnickfeaturechan{Userid(uid), su.Username, su.Features, nil}
-			}
-		}
-	})()
+	go usertools.setupUserLookup()
+	go usertools.setupRefreshUser()
 
 }
 
-func setupRefreshUser() chan *redis.Message {
+func (ut *userTools) setupUserLookup() {
+	ut.loadUserids()
+	t := time.NewTicker(time.Minute)
+	cp := watchdog.register("userid lookup thread", time.Minute)
+	defer watchdog.unregister("userid lookup thread")
+
+	for {
+		select {
+		case <-t.C:
+			cp <- true
+		case nu := <-ut.adduser:
+			ut.nicklookup[strings.ToLower(nu.nick)] = uidprot{nu.id, nu.protected}
+		case nc := <-ut.getuidfornick:
+			select {
+			case nc.c <- ut.nicklookup[strings.ToLower(nc.nick)]:
+			default:
+			}
+		}
+	}
+}
+
+func (ut *userTools) getUseridForNick(nick string) (Userid, bool) {
+	c := make(chan uidprot, 1)
+	ut.getuidfornick <- &nickchan{nick, c}
+	d := <-c
+	return d.id, d.protected
+}
+
+func (ut *userTools) setupRefreshUser() {
+	refreshuser := ut.getRefreshUserChan()
+	t := time.NewTicker(time.Minute)
+	cp := watchdog.register("refreshuser thread", time.Minute)
+	defer watchdog.unregister("refreshuser thread")
+
+	for {
+		select {
+		case <-t.C:
+			cp <- true // send heartbeat
+		case msg := <-refreshuser:
+			if msg.Err != nil {
+				D("Error receivong from redis pub/sub channel refreshbans")
+				refreshuser = ut.getRefreshUserChan()
+				continue
+			}
+			if len(msg.Message) == 0 { // wtf, a spurious message
+				continue
+			}
+
+			D("got refreshuser message: ", msg.Message)
+
+			var su sessionUser
+			err := json.Unmarshal([]byte(msg.Message), &su)
+			if err != nil {
+				D("Unable to unmarshal sessionuser string: ", msg.Message)
+				continue
+			}
+
+			uid, err := strconv.ParseInt(su.UserId, 10, 32)
+			if err != nil {
+				continue
+			}
+
+			// names cache user refresh, not actually used anywhere
+			user := &User{
+				id:              Userid(uid),
+				nick:            su.Username,
+				features:        0,
+				lastmessage:     nil,
+				lastmessagetime: time.Time{},
+				lastactive:      time.Time{},
+				delayscale:      1,
+				simplified:      nil,
+				RWMutex:         sync.RWMutex{},
+			}
+			user.setFeatures(su.Features)
+			user.assembleSimplifiedUser()
+			namescache.refresh(user)
+
+			usertools.adduser <- &nickuidprot{
+				su.Username,
+				uidprot{Userid(uid), user.isProtected()},
+			}
+			hub.refreshuser <- Userid(uid)
+		}
+	}
+}
+
+func (ut *userTools) getRefreshUserChan() chan *redis.Message {
+refreshuseragain:
 	c, err := rds.PubSubClient()
 	if err != nil {
 		B("Unable to create redis pubsub client: ", err)
 		time.Sleep(500 * time.Millisecond)
-		return setupRefreshUser()
+		goto refreshuseragain
 	}
 	refreshuser, err := c.Subscribe("refreshuser")
 	if err != nil {
 		B("Unable to subscribe to the redis refreshuser channel: ", err)
 		time.Sleep(500 * time.Millisecond)
-		return setupRefreshUser()
+		goto refreshuseragain
 	}
 
 	return refreshuser
 }
 
-func loadUserids() {
+func (ut *userTools) loadUserids() {
 	rows, err := db.Query(`
 		SELECT DISTINCT
 			u.userId,
@@ -272,7 +190,7 @@ func loadUserids() {
 		FROM dfl_users AS u
 		LEFT JOIN dfl_users_features AS f ON (
 			f.userId = u.userId AND
-			featureId = (SELECT featureId FROM dfl_features WHERE featureName = "protected")
+			featureId = (SELECT featureId FROM dfl_features WHERE featureName IN("protected", "admin") LIMIT 1)
 		)
 	`)
 
@@ -292,21 +210,102 @@ func loadUserids() {
 			continue
 		}
 
-		nicklookup[strings.ToLower(nick)] = uidprot{uid, protected}
-
+		ut.nicklookup[strings.ToLower(nick)] = uidprot{uid, protected}
 	}
-	D("Loaded", len(nicklookup), "nicks")
 
+	D("Loaded", len(ut.nicklookup), "nicks")
 }
 
-func getUseridForNick(nick string) (Userid, bool) {
-	c := make(chan uidprot)
-	getuidfornick <- &nickchan{strings.ToLower(nick), c}
-	d := <-c
-	return d.id, d.protected
+// ----------
+type Userid int32
+type User struct {
+	id              Userid
+	nick            string
+	features        uint32
+	lastmessage     []byte
+	lastmessagetime time.Time
+	lastactive      time.Time
+	delayscale      uint8
+	simplified      *SimplifiedUser
+	sync.RWMutex
 }
 
-func getUser(r *http.Request) (u *User, banned bool) {
+func (u *User) featureGet(bitnum uint32) bool {
+	return ((u.features & bitnum) != 0)
+}
+
+func (u *User) featureSet(bitnum uint32) {
+	u.features |= bitnum
+}
+
+func (u *User) featureCount() (c uint8) {
+	// Counting bits set, Brian Kernighan's way
+	v := u.features
+	for c = 0; v != 0; c++ {
+		v &= v - 1 // clear the least significant bit set
+	}
+	return
+}
+
+// isModerator checks if the user can use mod commands
+func (u *User) isModerator() bool {
+	return u.featureGet(ISMODERATOR | ISADMIN | ISBOT)
+}
+
+// isSubscriber checks if the user can speak when the chat is in submode
+func (u *User) isSubscriber() bool {
+	return u.featureGet(ISSUBSCRIBER | ISADMIN | ISMODERATOR | ISVIP)
+}
+
+// isBot checks if the user is exempt from ratelimiting
+func (u *User) isBot() bool {
+	return u.featureGet(ISBOT)
+}
+
+// isProtected checks if the user can be moderated or not
+func (u *User) isProtected() bool {
+	return u.featureGet(ISADMIN | ISPROTECTED)
+}
+
+func (u *User) setFeatures(features []string) {
+	for _, feature := range features {
+		switch feature {
+		case "admin":
+			u.featureSet(ISADMIN)
+		case "moderator":
+			u.featureSet(ISMODERATOR)
+		case "protected":
+			u.featureSet(ISPROTECTED)
+		case "subscriber":
+			u.featureSet(ISSUBSCRIBER)
+		case "vip":
+			u.featureSet(ISVIP)
+		case "bot":
+			u.featureSet(ISBOT)
+		default:
+			if feature[:5] == "flair" {
+				flair, err := strconv.Atoi(feature[5:])
+				if err != nil {
+					D("Could not parse unknown feature:", feature, err)
+					continue
+				}
+				// six proper features, all others are just useless flairs
+				u.featureSet(1 << (6 + uint8(flair)))
+			}
+		}
+	}
+}
+
+func (u *User) assembleSimplifiedUser() {
+	u.simplified = &SimplifiedUser{
+		u.nick,
+		u.features,
+		1,
+	}
+}
+
+// ----------
+func getUser(r *http.Request) (user *User, banned bool) {
 
 	pos := strings.LastIndex(r.RemoteAddr, ":")
 	ip := r.RemoteAddr[:pos]
@@ -327,9 +326,7 @@ func getUser(r *http.Request) (u *User, banned bool) {
 			return
 		}
 		authdata = []byte(sess.Val())
-
 	} else {
-
 		// try authtoken auth
 		authtoken, err := r.Cookie("authtoken")
 		if err != nil || !cookievalid.MatchString(authtoken.Value) {
@@ -338,15 +335,16 @@ func getUser(r *http.Request) (u *User, banned bool) {
 		}
 
 		resp, err := http.PostForm(authtokenurl, url.Values{"authtoken": {authtoken.Value}})
+		if resp.Body != nil {
+			defer resp.Body.Close()
+		}
+
 		if err != nil || resp.StatusCode != 200 {
-			D("Unable to call authtokenurl", err, resp.StatusCode)
 			banned = bans.isUseridIPBanned(ip, 0)
 			return
 		}
 
-		authdata, err = ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
-
+		authdata, _ = ioutil.ReadAll(resp.Body)
 	}
 
 	err = json.Unmarshal(authdata, &su)
@@ -362,17 +360,28 @@ func getUser(r *http.Request) (u *User, banned bool) {
 		banned = bans.isUseridIPBanned(ip, 0)
 		return
 	}
-	userid := Userid(id)
 
+	userid := Userid(id)
 	banned = bans.isUseridIPBanned(ip, userid)
 	if banned {
 		return
 	}
 
 	cacheIPForUser(userid, ip)
-	uc := make(chan *User, 1)
-	hub.getuser <- &uidnickfeaturechan{userid, su.Username, su.Features, uc}
-	u = <-uc
+	user = &User{
+		id:              userid,
+		nick:            su.Username,
+		features:        0,
+		lastmessage:     nil,
+		lastmessagetime: time.Time{},
+		lastactive:      time.Time{},
+		delayscale:      1,
+		simplified:      nil,
+		RWMutex:         sync.RWMutex{},
+	}
+	user.setFeatures(su.Features)
+	user.assembleSimplifiedUser()
 
+	user = namescache.add(user)
 	return
 }

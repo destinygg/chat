@@ -78,8 +78,8 @@ func initRedis(addr string, db int64, pw string) {
 
 	go (func() {
 		t := time.NewTicker(time.Minute)
-		cp := registerWatchdog("redis check thread", time.Minute)
-		defer unregisterWatchdog("redis check thread")
+		cp := watchdog.register("redis check thread", time.Minute)
+		defer watchdog.unregister("redis check thread")
 
 		for {
 			select {

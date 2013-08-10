@@ -90,40 +90,27 @@ func newConnection(s *websocket.Conn, user *User) {
 
 	go c.writePumpText()
 	c.readPumpText()
-
 }
 
 func (c *Connection) readPumpText() {
 	defer func() {
 		c.Quit()
 		if c.user != nil {
-			c.user.Lock()
-			userDisconnect(c.user)
-			c.user.connections = removeConnFromArray(c.user.connections, c)
-			c.user.Unlock()
+			namescache.disconnect(c.user)
 		} else {
-			removeConnection()
+			namescache.removeConnection()
 		}
 		c.socket.Close()
 	}()
 
 	if c.user != nil {
-		c.user.Lock()
-		if c.user.connections == nil {
-			c.user.connections = make([]*Connection, 1, 3)
-			c.user.connections[0] = c
-		} else if len(c.user.connections) > 3 {
-			c.user.Unlock()
+		if c.user.simplified.Connections > 3 {
 			c.SendError("toomanyconnections")
 			c.stop <- true
 			return
-		} else {
-			c.user.connections = append(c.user.connections, c)
 		}
-		addToNameCache(c.user)
-		c.user.Unlock()
 	} else {
-		addConnection()
+		namescache.addConnection()
 	}
 
 	hub.register <- c
@@ -143,8 +130,8 @@ func (c *Connection) readPumpText() {
 		name, data, err := Unpack(string(message[:n]))
 		if err != nil {
 			// invalid protocol message from the client, just ignore it,
-			// should we instead disconnect the user?
-			continue
+			// disconnect the user
+			return
 		}
 
 		// update for timeout, need lock because we check it in the write goroutine
@@ -253,20 +240,12 @@ func (c *Connection) Broadcast(event string, data *EventDataOut) {
 	logEvent(c.user.id, event, data)
 }
 
-func (c *Connection) getSimplifiedUser() *SimplifiedUser {
-	if c.user == nil {
-		return nil
-	}
-
-	return c.user.simplified
-}
-
 func (c *Connection) canModerateUser(nick string) (bool, Userid) {
 	if c.user == nil || utf8.RuneCountInString(nick) == 0 {
 		return false, 0
 	}
 
-	uid, protected := getUseridForNick(nick)
+	uid, protected := usertools.getUseridForNick(nick)
 	if uid == 0 || c.user.id == uid || protected {
 		return false, 0
 	}
@@ -276,7 +255,9 @@ func (c *Connection) canModerateUser(nick string) (bool, Userid) {
 
 func (c *Connection) getEventDataOut() *EventDataOut {
 	out := new(EventDataOut)
-	out.SimplifiedUser = c.getSimplifiedUser()
+	if c.user != nil {
+		out.SimplifiedUser = c.user.simplified
+	}
 	out.Timestamp = unixMilliTime()
 	return out
 }
@@ -326,6 +307,8 @@ func (c *Connection) OnMsg(data []byte) {
 		switch {
 		case difference <= DELAY:
 			c.user.delayscale *= 2
+		case difference > DELAY && difference <= 2*DELAY:
+			c.user.delayscale += 1
 		case difference > MAXTHROTTLETIME:
 			c.user.delayscale = 1
 		}
@@ -364,7 +347,7 @@ func (c *Connection) OnPrivmsg(data []byte) {
 func (c *Connection) Names() {
 	c.sendmarshalled <- &message{
 		"NAMES",
-		getNames(),
+		namescache.getNames(),
 	}
 }
 
@@ -414,7 +397,7 @@ func (c *Connection) OnUnmute(data []byte) {
 		return
 	}
 
-	uid, _ := getUseridForNick(user.Data)
+	uid, _ := usertools.getUseridForNick(user.Data)
 	if uid == 0 {
 		c.SendError("notfound")
 		return
@@ -485,7 +468,7 @@ func (c *Connection) OnUnban(data []byte) {
 		return
 	}
 
-	uid, _ := getUseridForNick(user.Data)
+	uid, _ := usertools.getUseridForNick(user.Data)
 	if uid == 0 {
 		c.SendError("notfound")
 		return

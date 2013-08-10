@@ -60,8 +60,8 @@ func (b *Bans) run() {
 	b.loadActive()
 	refreshban := b.setupRefresh()
 	t := time.NewTicker(time.Minute)
-	cp := registerWatchdog("ban thread", time.Minute)
-	defer unregisterWatchdog("ban thread")
+	cp := watchdog.register("ban thread", time.Minute)
+	defer watchdog.unregister("ban thread")
 
 	for {
 		select {

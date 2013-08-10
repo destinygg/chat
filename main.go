@@ -140,5 +140,4 @@ func Handler(socket *websocket.Conn) {
 	}
 
 	newConnection(socket, user)
-
 }
