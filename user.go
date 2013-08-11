@@ -18,6 +18,8 @@ type userTools struct {
 	nicklookup    map[string]uidprot
 	adduser       chan *nickuidprot
 	getuidfornick chan *nickchan
+	featurelock   sync.RWMutex
+	features      map[uint32][]string
 }
 
 var (
@@ -26,6 +28,8 @@ var (
 		nicklookup:    make(map[string]uidprot),
 		adduser:       make(chan *nickuidprot),
 		getuidfornick: make(chan *nickchan, 256),
+		featurelock:   sync.RWMutex{},
+		features:      make(map[uint32][]string),
 	}
 )
 
@@ -297,9 +301,46 @@ func (u *User) setFeatures(features []string) {
 }
 
 func (u *User) assembleSimplifiedUser() {
+	usertools.featurelock.RLock()
+	f, ok := usertools.features[u.features]
+	usertools.featurelock.RUnlock()
+	if !ok {
+		usertools.featurelock.Lock()
+		defer usertools.featurelock.Unlock()
+		numfeatures := u.featureCount()
+		f = make([]string, 0, numfeatures)
+		if u.featureGet(ISPROTECTED) {
+			f = append(f, "protected")
+		}
+		if u.featureGet(ISSUBSCRIBER) {
+			f = append(f, "subscriber")
+		}
+		if u.featureGet(ISVIP) {
+			f = append(f, "vip")
+		}
+		if u.featureGet(ISMODERATOR) {
+			f = append(f, "moderator")
+		}
+		if u.featureGet(ISADMIN) {
+			f = append(f, "admin")
+		}
+		if u.featureGet(ISBOT) {
+			f = append(f, "bot")
+		}
+
+		for i := uint8(6); i <= 28; i++ {
+			if u.featureGet(1 << i) {
+				flair := fmt.Sprintf("flair%d", i-6)
+				f = append(f, flair)
+			}
+		}
+
+		usertools.features[u.features] = f
+	}
+
 	u.simplified = &SimplifiedUser{
 		u.nick,
-		u.features,
+		&f,
 		1,
 	}
 }

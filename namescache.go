@@ -60,7 +60,7 @@ func (nc *namesCache) run() {
 		case user := <-nc.refreshuser:
 			if su, ok := nc.names[user.id]; ok {
 				su.Nick = user.nick
-				su.Features = user.features
+				su.Features = user.simplified.Features
 				nc.users[user.id].nick = user.nick
 				nc.users[user.id].features = user.features
 				nc.marshalNames()
@@ -72,7 +72,7 @@ func (nc *namesCache) run() {
 			} else {
 				nc.names[uc.user.id] = &SimplifiedUser{
 					Nick:        uc.user.nick,
-					Features:    uc.user.features,
+					Features:    uc.user.simplified.Features,
 					Connections: 1,
 				}
 				uc.user.simplified = nc.names[uc.user.id]

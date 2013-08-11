@@ -37,9 +37,9 @@ type Connection struct {
 }
 
 type SimplifiedUser struct {
-	Nick        string `json:"nick"`
-	Features    uint32 `json:"features,omitempty"`
-	Connections uint8  `json:"connections,omitempty"`
+	Nick        string    `json:"nick"`
+	Features    *[]string `json:"features,omitempty"`
+	Connections uint8     `json:"connections,omitempty"`
 }
 
 type EventDataIn struct {
@@ -195,12 +195,17 @@ func (c *Connection) writePumpText() {
 		case <-c.stop:
 			return
 		case message := <-c.blocksend:
+			unlock := make(chan bool)
+			namescache.lock <- unlock
 			if data, err := Marshal(message.data); err == nil {
+				unlock <- true
 				if data, err := Pack(message.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
 				}
+			} else {
+				unlock <- true
 			}
 		case message := <-c.send:
 			unlock := make(chan bool)
@@ -548,6 +553,6 @@ func (c *Connection) SendError(identifier string) {
 }
 
 func (c *Connection) Refresh() {
-	c.Emit("REFRESH", c.getEventDataOut())
+	c.EmitBlock("REFRESH", c.getEventDataOut())
 	c.stop <- true
 }
