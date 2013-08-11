@@ -247,7 +247,7 @@ func (c *Connection) canModerateUser(nick string) (bool, Userid) {
 
 	uid, protected := usertools.getUseridForNick(nick)
 	if uid == 0 || c.user.id == uid || protected {
-		return false, 0
+		return false, uid
 	}
 
 	return true, uid
@@ -426,14 +426,15 @@ func (c *Connection) OnBan(data []byte) {
 	}
 
 	if !c.user.isModerator() {
-		D("user tried to ban but not a mod: ", c.user.nick, c.user.id)
 		c.SendError("nopermission")
 		return
 	}
 
 	ok, uid := c.canModerateUser(ban.Nick)
-	if !ok || uid == 0 {
-		D("user tried to ban", ban.Nick, "but couldt find user", ok, uid)
+	if uid == 0 {
+		c.SendError("notfound")
+		return
+	} else if !ok {
 		c.SendError("nopermission")
 		return
 	}

@@ -57,11 +57,8 @@ func (nc *namesCache) run() {
 			if su, ok := nc.names[user.id]; ok {
 				su.Nick = user.nick
 				su.Features = user.features
-
-				nc.users[user.id].Lock()
 				nc.users[user.id].nick = user.nick
 				nc.users[user.id].features = user.features
-				nc.users[user.id].Unlock()
 				nc.marshalNames()
 			}
 		case uc := <-nc.adduser:

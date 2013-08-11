@@ -66,13 +66,13 @@ type sessionUser struct {
 	Features []string
 }
 
-func initUsers() {
+func initUsers(redisdb int64) {
 
 	// goroutine for nick<->userid lookup without locks
 	// important detail: all the nicks get normalized to their lowercase form
 	// so that the case does not matter
 	go usertools.setupUserLookup()
-	go usertools.setupRefreshUser()
+	go usertools.setupRefreshUser(redisdb)
 
 }
 
@@ -104,8 +104,8 @@ func (ut *userTools) getUseridForNick(nick string) (Userid, bool) {
 	return d.id, d.protected
 }
 
-func (ut *userTools) setupRefreshUser() {
-	refreshuser := ut.getRefreshUserChan()
+func (ut *userTools) setupRefreshUser(redisdb int64) {
+	refreshuser := ut.getRefreshUserChan(redisdb)
 	t := time.NewTicker(time.Minute)
 	cp := watchdog.register("refreshuser thread", time.Minute)
 	defer watchdog.unregister("refreshuser thread")
@@ -117,7 +117,7 @@ func (ut *userTools) setupRefreshUser() {
 		case msg := <-refreshuser:
 			if msg.Err != nil {
 				D("Error receivong from redis pub/sub channel refreshbans")
-				refreshuser = ut.getRefreshUserChan()
+				refreshuser = ut.getRefreshUserChan(redisdb)
 				continue
 			}
 			if len(msg.Message) == 0 { // wtf, a spurious message
@@ -163,7 +163,7 @@ func (ut *userTools) setupRefreshUser() {
 	}
 }
 
-func (ut *userTools) getRefreshUserChan() chan *redis.Message {
+func (ut *userTools) getRefreshUserChan(redisdb int64) chan *redis.Message {
 refreshuseragain:
 	c, err := rds.PubSubClient()
 	if err != nil {
@@ -171,7 +171,7 @@ refreshuseragain:
 		time.Sleep(500 * time.Millisecond)
 		goto refreshuseragain
 	}
-	refreshuser, err := c.Subscribe("refreshuser")
+	refreshuser, err := c.Subscribe(fmt.Sprintf("refreshuser-%d", redisdb))
 	if err != nil {
 		B("Unable to subscribe to the redis refreshuser channel: ", err)
 		time.Sleep(500 * time.Millisecond)
@@ -320,7 +320,7 @@ func getUser(r *http.Request) (user *User, banned bool) {
 			return
 		}
 
-		sess := rds.Get(fmt.Sprintf("CHAT:%v", sessionid.Value))
+		sess := rds.Get(fmt.Sprintf("CHAT:session-%v", sessionid.Value))
 		if sess.Err() != nil {
 			banned = bans.isUseridIPBanned(ip, 0)
 			return

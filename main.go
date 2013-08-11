@@ -50,7 +50,7 @@ func main() {
 
 		nc.AddSection("redis")
 		nc.AddOption("redis", "address", "localhost:6379")
-		nc.AddOption("redis", "database", "-1")
+		nc.AddOption("redis", "database", "0")
 		nc.AddOption("redis", "password", "")
 
 		nc.AddSection("database")
@@ -114,7 +114,7 @@ func main() {
 
 	initMutes()
 	initBans()
-	initUsers()
+	initUsers(redisdb)
 	initEventlog()
 
 	http.Handle("/ws", websocket.Handler(Handler))
