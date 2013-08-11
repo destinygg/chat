@@ -104,11 +104,15 @@ func (c *Connection) readPumpText() {
 	}()
 
 	if c.user != nil {
+		unlock := make(chan bool)
+		namescache.lock <- unlock
 		if c.user.simplified.Connections > 3 {
+			unlock <- true
 			c.SendError("toomanyconnections")
 			c.stop <- true
 			return
 		}
+		unlock <- true
 	} else {
 		namescache.addConnection()
 	}
@@ -199,12 +203,17 @@ func (c *Connection) writePumpText() {
 				}
 			}
 		case message := <-c.send:
+			unlock := make(chan bool)
+			namescache.lock <- unlock
 			if data, err := Marshal(message.data); err == nil {
+				unlock <- true
 				if data, err := Pack(message.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
 				}
+			} else {
+				unlock <- true
 			}
 		case message := <-c.sendmarshalled:
 			data := message.data.([]byte)

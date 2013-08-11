@@ -15,6 +15,7 @@ type namesCache struct {
 	addconnection    chan bool
 	removeconnection chan bool
 	getnames         chan chan []byte
+	lock             chan chan bool
 }
 
 type userChan struct {
@@ -38,6 +39,7 @@ var namescache = namesCache{
 	addconnection:    make(chan bool),
 	removeconnection: make(chan bool),
 	getnames:         make(chan chan []byte),
+	lock:             make(chan chan bool),
 }
 
 func initNamesCache() {
@@ -53,6 +55,8 @@ func (nc *namesCache) run() {
 		select {
 		case <-t.C:
 			cp <- true
+		case c := <-nc.lock:
+			<-c
 		case user := <-nc.refreshuser:
 			if su, ok := nc.names[user.id]; ok {
 				su.Nick = user.nick
