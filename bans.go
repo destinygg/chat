@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"github.com/go-sql-driver/mysql"
 	"github.com/vmihailenco/redis"
 	"time"
@@ -52,13 +53,13 @@ var (
 	}
 )
 
-func initBans() {
-	go bans.run()
+func initBans(redisdb int64) {
+	go bans.run(redisdb)
 }
 
-func (b *Bans) run() {
+func (b *Bans) run(redisdb int64) {
 	b.loadActive()
-	refreshban := b.setupRefresh()
+	refreshban := b.setupRefresh(redisdb)
 	t := time.NewTicker(time.Minute)
 	cp := watchdog.register("ban thread", time.Minute)
 	defer watchdog.unregister("ban thread")
@@ -98,7 +99,7 @@ func (b *Bans) run() {
 		case m := <-refreshban:
 			if m.Err != nil {
 				D("Error receiving from redis pub/sub channel refreshbans")
-				refreshban = b.setupRefresh()
+				refreshban = b.setupRefresh(redisdb)
 			} else {
 				D("Refreshing bans")
 				b.loadActive()
@@ -107,18 +108,19 @@ func (b *Bans) run() {
 	}
 }
 
-func (b *Bans) setupRefresh() chan *redis.Message {
+func (b *Bans) setupRefresh(redisdb int64) chan *redis.Message {
+refreshagain:
 	c, err := rds.PubSubClient()
 	if err != nil {
 		B("Unable to create redis pubsub client: ", err)
 		time.Sleep(500 * time.Millisecond)
-		return b.setupRefresh()
+		goto refreshagain
 	}
-	refreshban, err := c.Subscribe("refreshbans")
+	refreshban, err := c.Subscribe(fmt.Sprintf("refreshbans-%d", redisdb))
 	if err != nil {
 		B("Unable to subscribe to the redis refreshbans channel: ", err)
 		time.Sleep(500 * time.Millisecond)
-		return b.setupRefresh()
+		goto refreshagain
 	}
 
 	return refreshban

@@ -113,7 +113,7 @@ func main() {
 	initRedis(redisaddr, redisdb, redispw)
 
 	initMutes()
-	initBans()
+	initBans(redisdb)
 	initUsers(redisdb)
 	initEventlog()
 
