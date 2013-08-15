@@ -120,15 +120,13 @@ func (ut *userTools) setupRefreshUser(redisdb int64) {
 			cp <- true // send heartbeat
 		case msg := <-refreshuser:
 			if msg.Err != nil {
-				D("Error receivong from redis pub/sub channel refreshbans")
+				D("Error receiving from redis pub/sub channel refreshuser")
 				refreshuser = ut.getRefreshUserChan(redisdb)
 				continue
 			}
 			if len(msg.Message) == 0 { // wtf, a spurious message
 				continue
 			}
-
-			D("got refreshuser message: ", msg.Message)
 
 			var su sessionUser
 			err := json.Unmarshal([]byte(msg.Message), &su)

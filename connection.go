@@ -106,7 +106,7 @@ func (c *Connection) readPumpText() {
 	if c.user != nil {
 		unlock := make(chan bool)
 		namescache.lock <- unlock
-		if c.user.simplified.Connections > 3 {
+		if c.user.simplified.Connections > 5 {
 			unlock <- true
 			c.SendError("toomanyconnections")
 			c.stop <- true
