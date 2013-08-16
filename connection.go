@@ -321,8 +321,6 @@ func (c *Connection) OnMsg(data []byte) {
 		switch {
 		case difference <= DELAY:
 			c.user.delayscale *= 2
-		case difference > DELAY && difference <= 2*DELAY:
-			c.user.delayscale += 1
 		case difference > MAXTHROTTLETIME:
 			c.user.delayscale = 1
 		}
