@@ -295,9 +295,7 @@ func (c *Connection) canModerateUser(nick string) (bool, Userid) {
 func (c *Connection) getEventDataOut() *EventDataOut {
 	out := new(EventDataOut)
 	if c.user != nil {
-		c.lockUserIfExists(true)
 		out.SimplifiedUser = c.user.simplified
-		c.unlockUserIfExists(true)
 	}
 	out.Timestamp = unixMilliTime()
 	return out
