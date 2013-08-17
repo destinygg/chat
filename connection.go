@@ -78,7 +78,7 @@ func newConnection(s *websocket.Conn, user *User) {
 	c := &Connection{
 		socket:         s,
 		send:           make(chan *message, SENDCHANNELSIZE),
-		sendmarshalled: make(chan *message),
+		sendmarshalled: make(chan *message, SENDCHANNELSIZE),
 		blocksend:      make(chan *message),
 		banned:         make(chan bool, 8),
 		stop:           make(chan bool),
@@ -104,15 +104,14 @@ func (c *Connection) readPumpText() {
 	}()
 
 	if c.user != nil {
-		unlock := make(chan bool)
-		namescache.lock <- unlock
+		c.lockUserIfExists(true)
 		if c.user.simplified.Connections > 5 {
-			unlock <- true
+			c.unlockUserIfExists(true)
 			c.SendError("toomanyconnections")
 			c.stop <- true
 			return
 		}
-		unlock <- true
+		c.unlockUserIfExists(true)
 	} else {
 		namescache.addConnection()
 	}
@@ -195,30 +194,28 @@ func (c *Connection) writePumpText() {
 		case <-c.stop:
 			return
 		case message := <-c.blocksend:
-			unlock := make(chan bool)
-			namescache.lock <- unlock
+			c.lockUserIfExists(true)
 			if data, err := Marshal(message.data); err == nil {
-				unlock <- true
+				c.unlockUserIfExists(true)
 				if data, err := Pack(message.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
 				}
 			} else {
-				unlock <- true
+				c.unlockUserIfExists(true)
 			}
 		case message := <-c.send:
-			unlock := make(chan bool)
-			namescache.lock <- unlock
+			c.lockUserIfExists(true)
 			if data, err := Marshal(message.data); err == nil {
-				unlock <- true
+				c.unlockUserIfExists(true)
 				if data, err := Pack(message.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
 				}
 			} else {
-				unlock <- true
+				c.unlockUserIfExists(true)
 			}
 		case message := <-c.sendmarshalled:
 			data := message.data.([]byte)
@@ -228,6 +225,30 @@ func (c *Connection) writePumpText() {
 				}
 			}
 		}
+	}
+}
+
+func (c *Connection) lockUserIfExists(readonly bool) {
+	if c.user == nil {
+		return
+	}
+
+	if readonly {
+		c.user.RLock()
+	} else {
+		c.user.Lock()
+	}
+}
+
+func (c *Connection) unlockUserIfExists(readonly bool) {
+	if c.user == nil {
+		return
+	}
+
+	if readonly {
+		c.user.RUnlock()
+	} else {
+		c.user.Unlock()
 	}
 }
 
@@ -245,9 +266,13 @@ func (c *Connection) EmitBlock(event string, data interface{}) {
 	return
 }
 func (c *Connection) Broadcast(event string, data *EventDataOut) {
+	c.lockUserIfExists(true)
+	marshalled, _ := Marshal(data)
+	c.unlockUserIfExists(true)
+
 	m := &message{
 		event: event,
-		data:  data,
+		data:  marshalled,
 	}
 	hub.broadcast <- m
 	// by definition only users can send messages
@@ -270,7 +295,9 @@ func (c *Connection) canModerateUser(nick string) (bool, Userid) {
 func (c *Connection) getEventDataOut() *EventDataOut {
 	out := new(EventDataOut)
 	if c.user != nil {
+		c.lockUserIfExists(true)
 		out.SimplifiedUser = c.user.simplified
+		c.unlockUserIfExists(true)
 	}
 	out.Timestamp = unixMilliTime()
 	return out

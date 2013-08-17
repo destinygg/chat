@@ -91,8 +91,8 @@ func (hub *Hub) run() {
 			d.c <- ips
 		case message := <-hub.broadcast:
 			for c := range hub.connections {
-				if len(c.send) < SENDCHANNELSIZE {
-					c.send <- message
+				if len(c.sendmarshalled) < SENDCHANNELSIZE {
+					c.sendmarshalled <- message
 				}
 			}
 		// timeout handling

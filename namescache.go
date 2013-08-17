@@ -5,7 +5,6 @@ import (
 )
 
 type namesCache struct {
-	names            map[Userid]*SimplifiedUser
 	users            map[Userid]*User
 	marshallednames  []byte
 	usercount        uint32
@@ -29,7 +28,6 @@ type NamesOut struct {
 }
 
 var namescache = namesCache{
-	names:            make(map[Userid]*SimplifiedUser),
 	users:            make(map[Userid]*User),
 	marshallednames:  nil,
 	usercount:        0,
@@ -58,36 +56,41 @@ func (nc *namesCache) run() {
 		case c := <-nc.lock:
 			<-c
 		case user := <-nc.refreshuser:
-			if su, ok := nc.names[user.id]; ok {
-				su.Nick = user.nick
-				su.Features = user.simplified.Features
-				nc.users[user.id].nick = user.nick
-				nc.users[user.id].features = user.features
+			if u, ok := nc.users[user.id]; ok {
+				u.Lock()
+				u.simplified.Nick = user.nick
+				u.simplified.Features = user.simplified.Features
+				u.nick = user.nick
+				u.features = user.features
+				u.Unlock()
 				nc.marshalNames()
 			}
 		case uc := <-nc.adduser:
 			nc.usercount++
-			if su, ok := nc.names[uc.user.id]; ok {
-				su.Connections++
+			if u, ok := nc.users[uc.user.id]; ok {
+				u.Lock()
+				u.simplified.Connections++
+				u.Unlock()
 			} else {
-				nc.names[uc.user.id] = &SimplifiedUser{
+				su := &SimplifiedUser{
 					Nick:        uc.user.nick,
 					Features:    uc.user.simplified.Features,
 					Connections: 1,
 				}
-				uc.user.simplified = nc.names[uc.user.id]
+				uc.user.simplified = su
 				nc.users[uc.user.id] = uc.user
 			}
 			uc.c <- nc.users[uc.user.id]
 			nc.marshalNames()
 		case user := <-nc.discuser:
 			nc.usercount--
-			if su, ok := nc.names[user.id]; ok {
-				su.Connections--
-				if su.Connections <= 0 {
-					delete(nc.names, user.id)
+			if u, ok := nc.users[user.id]; ok {
+				u.Lock()
+				u.simplified.Connections--
+				if u.simplified.Connections <= 0 {
 					delete(nc.users, user.id)
 				}
+				u.Unlock()
 			}
 			nc.marshalNames()
 		case <-nc.addconnection:
@@ -103,15 +106,20 @@ func (nc *namesCache) run() {
 }
 
 func (nc *namesCache) marshalNames() {
-	users := make([]*SimplifiedUser, 0, len(nc.names))
-	for _, su := range nc.names {
-		users = append(users, su)
+	users := make([]*SimplifiedUser, 0, len(nc.users))
+	for _, u := range nc.users {
+		u.RLock()
+		users = append(users, u.simplified)
 	}
 
 	nc.marshallednames, _ = Marshal(&NamesOut{
 		Users:       users,
 		Connections: nc.usercount,
 	})
+
+	for _, u := range nc.users {
+		u.RUnlock()
+	}
 }
 
 func (nc *namesCache) getNames() []byte {

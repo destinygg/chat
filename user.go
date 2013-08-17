@@ -26,7 +26,7 @@ var (
 	cookievalid = regexp.MustCompile("^[a-z0-9]{32}$")
 	usertools   = userTools{
 		nicklookup:    make(map[string]uidprot),
-		adduser:       make(chan *nickuidprot),
+		adduser:       make(chan *nickuidprot, 256),
 		getuidfornick: make(chan *nickchan, 256),
 		featurelock:   sync.RWMutex{},
 		features:      make(map[uint32][]string),
@@ -420,6 +420,10 @@ func getUser(r *http.Request) (user *User, banned bool) {
 	}
 	user.setFeatures(su.Features)
 	user.assembleSimplifiedUser()
+	usertools.adduser <- &nickuidprot{
+		su.Username,
+		uidprot{userid, user.isProtected()},
+	}
 
 	user = namescache.add(user)
 	return
