@@ -28,7 +28,7 @@ type useridips struct {
 var hub = Hub{
 	connections: make(map[*Connection]bool),
 	broadcast:   make(chan *message, BROADCASTCHANNELSIZE),
-	register:    make(chan *Connection),
+	register:    make(chan *Connection, 256),
 	unregister:  make(chan *Connection),
 	bans:        make(chan Userid, 4),
 	ipbans:      make(chan string, 4),
@@ -36,7 +36,6 @@ var hub = Hub{
 	users:       make(map[Userid]*User),
 	refreshuser: make(chan Userid, 4),
 	submode:     0,
-	sublock:     make(chan bool),
 }
 
 func initHub() {
@@ -125,4 +124,12 @@ func (hub *Hub) canUserSpeak(c *Connection) bool {
 	}
 
 	return false
+}
+
+func (hub *Hub) toggleSubmode(enabled bool) {
+	var val uint32
+	if enabled {
+		val = 1
+	}
+	atomic.StoreUint32(&hub.submode, val)
 }
