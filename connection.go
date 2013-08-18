@@ -95,19 +95,23 @@ func newConnection(s *websocket.Conn, user *User) {
 func (c *Connection) readPumpText() {
 	defer func() {
 		c.Quit()
-		namescache.disconnect(c.user)
+		if c.user != nil {
+			namescache.disconnect(c.user)
+		} else {
+			namescache.removeConnection()
+		}
 		c.socket.Close()
 	}()
 
 	if c.user != nil {
-		c.rlockUserIfExists()
+		c.lockUserIfExists(true)
 		if c.user.simplified.Connections > 5 {
-			c.runlockUserIfExists()
+			c.unlockUserIfExists(true)
 			c.SendError("toomanyconnections")
 			c.stop <- true
 			return
 		}
-		c.runlockUserIfExists()
+		c.unlockUserIfExists(true)
 	} else {
 		namescache.addConnection()
 	}
@@ -190,28 +194,28 @@ func (c *Connection) writePumpText() {
 		case <-c.stop:
 			return
 		case message := <-c.blocksend:
-			c.rlockUserIfExists()
+			c.lockUserIfExists(true)
 			if data, err := Marshal(message.data); err == nil {
-				c.runlockUserIfExists()
+				c.unlockUserIfExists(true)
 				if data, err := Pack(message.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
 				}
 			} else {
-				c.runlockUserIfExists()
+				c.unlockUserIfExists(true)
 			}
 		case message := <-c.send:
-			c.rlockUserIfExists()
+			c.lockUserIfExists(true)
 			if data, err := Marshal(message.data); err == nil {
-				c.runlockUserIfExists()
+				c.unlockUserIfExists(true)
 				if data, err := Pack(message.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
 				}
 			} else {
-				c.runlockUserIfExists()
+				c.unlockUserIfExists(true)
 			}
 		case message := <-c.sendmarshalled:
 			data := message.data.([]byte)
@@ -224,20 +228,28 @@ func (c *Connection) writePumpText() {
 	}
 }
 
-func (c *Connection) rlockUserIfExists() {
+func (c *Connection) lockUserIfExists(readonly bool) {
 	if c.user == nil {
 		return
 	}
 
-	c.user.RLock()
+	if readonly {
+		c.user.RLock()
+	} else {
+		c.user.Lock()
+	}
 }
 
-func (c *Connection) runlockUserIfExists() {
+func (c *Connection) unlockUserIfExists(readonly bool) {
 	if c.user == nil {
 		return
 	}
 
-	c.user.RUnlock()
+	if readonly {
+		c.user.RUnlock()
+	} else {
+		c.user.Unlock()
+	}
 }
 
 func (c *Connection) Emit(event string, data interface{}) {
@@ -254,9 +266,9 @@ func (c *Connection) EmitBlock(event string, data interface{}) {
 	return
 }
 func (c *Connection) Broadcast(event string, data *EventDataOut) {
-	c.rlockUserIfExists()
+	c.lockUserIfExists(true)
 	marshalled, _ := Marshal(data)
-	c.runlockUserIfExists()
+	c.unlockUserIfExists(true)
 
 	m := &message{
 		event: event,
@@ -525,9 +537,9 @@ func (c *Connection) OnSubonly(data []byte) {
 
 	switch {
 	case m.Data == "on":
-		hub.toggleSubmode(true)
+		hub.sublock <- true
 	case m.Data == "off":
-		hub.toggleSubmode(false)
+		hub.sublock <- false
 	default:
 		c.SendError("protocolerror")
 		return

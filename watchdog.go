@@ -8,7 +8,6 @@ type wdog struct {
 	name       string
 	duration   time.Duration
 	c          chan bool
-	t          chan time.Time
 	expectedat time.Time
 }
 
@@ -29,14 +28,9 @@ func initWatchdog() {
 }
 
 func (w *watchDog) run() {
-	p := time.NewTicker(WATCHDOGINTERVAL)
-	t := time.NewTicker(WATCHDOGINTERVAL + 200*time.Millisecond)
+	t := time.NewTicker(time.Minute + 500*time.Millisecond)
 	for {
 		select {
-		case p := <-p.C:
-			for _, wa := range w.watchdogs {
-				wa.t <- p
-			}
 		case wa := <-w.newwatchdog:
 			w.watchdogs[wa.name] = wa
 		case name := <-w.delwatchdog:
@@ -47,7 +41,7 @@ func (w *watchDog) run() {
 					if len(wa.c) == 0 {
 						F("Watchdog didn't receive anything from ", name, " in time! Restarting...")
 					}
-					wa.expectedat = now.Add(wa.duration - 200*time.Millisecond)
+					wa.expectedat = now.Add(wa.duration - 500*time.Millisecond)
 					if len(wa.c) > 0 {
 						<-wa.c
 					}
@@ -57,11 +51,10 @@ func (w *watchDog) run() {
 	}
 }
 
-func (w *watchDog) register(name string) (chan time.Time, chan bool) {
-	p := make(chan time.Time, 4)
+func (w *watchDog) register(name string, duration time.Duration) chan bool {
 	c := make(chan bool, 4)
-	watchdog.newwatchdog <- &wdog{name, WATCHDOGINTERVAL, c, p, time.Now().Add(WATCHDOGINTERVAL)}
-	return p, c
+	watchdog.newwatchdog <- &wdog{name, duration, c, time.Now().Add(duration)}
+	return c
 }
 
 func (w *watchDog) unregister(name string) {

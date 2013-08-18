@@ -61,14 +61,13 @@ func (b *Bans) run(redisdb int64) {
 	b.loadActive()
 	refreshban := b.setupRefresh(redisdb)
 	t := time.NewTicker(time.Minute)
-	p, cp := watchdog.register("ban thread")
+	cp := watchdog.register("ban thread", time.Minute)
 	defer watchdog.unregister("ban thread")
 
 	for {
 		select {
-		case <-p:
-			cp <- true
 		case <-t.C:
+			cp <- true
 			b.clean()
 		case uid := <-b.unbanuserid:
 			delete(b.users, uid)

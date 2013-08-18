@@ -78,14 +78,13 @@ func initRedis(addr string, db int64, pw string) {
 
 	go (func() {
 		t := time.NewTicker(time.Minute)
-		p, cp := watchdog.register("redis check thread")
+		cp := watchdog.register("redis check thread", time.Minute)
 		defer watchdog.unregister("redis check thread")
 
 		for {
 			select {
-			case <-p:
-				cp <- true
 			case <-t.C:
+				cp <- true
 				ping := rds.Ping()
 				if ping.Err() != nil || ping.Val() != "PONG" {
 					D("Could not ping redis: ", ping.Err())
