@@ -1,9 +1,5 @@
 package main
 
-import (
-	"time"
-)
-
 type namesCache struct {
 	users            map[Userid]*User
 	marshallednames  []byte
@@ -14,7 +10,6 @@ type namesCache struct {
 	addconnection    chan bool
 	removeconnection chan bool
 	getnames         chan chan []byte
-	lock             chan chan bool
 }
 
 type userChan struct {
@@ -37,7 +32,6 @@ var namescache = namesCache{
 	addconnection:    make(chan bool),
 	removeconnection: make(chan bool),
 	getnames:         make(chan chan []byte),
-	lock:             make(chan chan bool),
 }
 
 func initNamesCache() {
@@ -45,16 +39,13 @@ func initNamesCache() {
 }
 
 func (nc *namesCache) run() {
-	t := time.NewTicker(time.Minute)
-	cp := watchdog.register("namescache thread", time.Minute)
+	p, cp := watchdog.register("namescache thread")
 	defer watchdog.unregister("namescache thread")
 
 	for {
 		select {
-		case <-t.C:
+		case <-p:
 			cp <- true
-		case c := <-nc.lock:
-			<-c
 		case user := <-nc.refreshuser:
 			if u, ok := nc.users[user.id]; ok {
 				u.Lock()
@@ -135,7 +126,11 @@ func (nc *namesCache) add(user *User) *User {
 }
 
 func (nc *namesCache) disconnect(user *User) {
-	nc.discuser <- user
+	if user != nil {
+		nc.discuser <- user
+	} else {
+		nc.removeconnection <- true
+	}
 }
 
 func (nc *namesCache) refresh(user *User) {
@@ -144,8 +139,4 @@ func (nc *namesCache) refresh(user *User) {
 
 func (nc *namesCache) addConnection() {
 	nc.addconnection <- true
-}
-
-func (nc *namesCache) removeConnection() {
-	nc.removeconnection <- true
 }

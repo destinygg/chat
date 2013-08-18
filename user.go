@@ -82,13 +82,12 @@ func initUsers(redisdb int64) {
 
 func (ut *userTools) setupUserLookup() {
 	ut.loadUserids()
-	t := time.NewTicker(time.Minute)
-	cp := watchdog.register("userid lookup thread", time.Minute)
+	p, cp := watchdog.register("userid lookup thread")
 	defer watchdog.unregister("userid lookup thread")
 
 	for {
 		select {
-		case <-t.C:
+		case <-p:
 			cp <- true
 		case nu := <-ut.adduser:
 			ut.nicklookup[strings.ToLower(nu.nick)] = uidprot{nu.id, nu.protected}
@@ -110,13 +109,12 @@ func (ut *userTools) getUseridForNick(nick string) (Userid, bool) {
 
 func (ut *userTools) setupRefreshUser(redisdb int64) {
 	refreshuser := ut.getRefreshUserChan(redisdb)
-	t := time.NewTicker(time.Minute)
-	cp := watchdog.register("refreshuser thread", time.Minute)
+	p, cp := watchdog.register("refreshuser thread")
 	defer watchdog.unregister("refreshuser thread")
 
 	for {
 		select {
-		case <-t.C:
+		case <-p:
 			cp <- true // send heartbeat
 		case msg := <-refreshuser:
 			if msg.Err != nil {

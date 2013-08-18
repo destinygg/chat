@@ -40,11 +40,13 @@ func initMutes() {
 func (m *Mutes) run() {
 	m.load()
 	t := time.NewTicker(time.Minute)
-	cp := watchdog.register("mute thread", time.Minute)
+	p, cp := watchdog.register("mute thread")
 	defer watchdog.unregister("mute thread")
 
 	for {
 		select {
+		case <-p:
+			cp <- true
 		case d := <-m.muteuserid:
 			m.users[d.userid] = d.t
 			m.save()
@@ -58,7 +60,6 @@ func (m *Mutes) run() {
 			delete(m.users, uid)
 			m.save()
 		case <-t.C:
-			cp <- true
 			m.clean()
 			m.save()
 		}

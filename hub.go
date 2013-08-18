@@ -17,7 +17,6 @@ type Hub struct {
 	users       map[Userid]*User
 	refreshuser chan Userid
 	submode     uint32
-	sublock     chan bool
 }
 
 type useridips struct {
@@ -28,7 +27,7 @@ type useridips struct {
 var hub = Hub{
 	connections: make(map[*Connection]bool),
 	broadcast:   make(chan *message, BROADCASTCHANNELSIZE),
-	register:    make(chan *Connection),
+	register:    make(chan *Connection, 256),
 	unregister:  make(chan *Connection),
 	bans:        make(chan Userid, 4),
 	ipbans:      make(chan string, 4),
@@ -36,7 +35,6 @@ var hub = Hub{
 	users:       make(map[Userid]*User),
 	refreshuser: make(chan Userid, 4),
 	submode:     0,
-	sublock:     make(chan bool),
 }
 
 func initHub() {
@@ -45,13 +43,12 @@ func initHub() {
 
 func (hub *Hub) run() {
 	pinger := time.NewTicker(PINGINTERVAL)
-	t := time.NewTicker(time.Minute)
-	cp := watchdog.register("hub thread", time.Minute)
+	p, cp := watchdog.register("hub thread")
 	defer watchdog.unregister("hub thread")
 
 	for {
 		select {
-		case <-t.C:
+		case <-p:
 			cp <- true
 		case c := <-hub.register:
 			hub.connections[c] = true
@@ -93,6 +90,8 @@ func (hub *Hub) run() {
 			for c := range hub.connections {
 				if len(c.sendmarshalled) < SENDCHANNELSIZE {
 					c.sendmarshalled <- message
+				} else {
+					P("could not send to channel because it was full")
 				}
 			}
 		// timeout handling
@@ -101,12 +100,6 @@ func (hub *Hub) run() {
 				if len(c.ping) < 2 {
 					c.ping <- t
 				}
-			}
-		case d := <-hub.sublock:
-			if d {
-				atomic.StoreUint32(&hub.submode, 1)
-			} else {
-				atomic.StoreUint32(&hub.submode, 0)
 			}
 		}
 	}
@@ -125,4 +118,12 @@ func (hub *Hub) canUserSpeak(c *Connection) bool {
 	}
 
 	return false
+}
+
+func (hub *Hub) toggleSubmode(enabled bool) {
+	var val uint32
+	if enabled {
+		val = 1
+	}
+	atomic.StoreUint32(&hub.submode, val)
 }
