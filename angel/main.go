@@ -36,6 +36,7 @@ func main() {
 	binpath, _ := c.GetString("default", "binarypath")
 	serverurl, _ := c.GetString("default", "serverurl")
 	origin, _ := c.GetString("default", "origin")
+	initLog()
 
 	base := path.Base(binpath)
 	basedir := strings.TrimSuffix(binpath, "/"+base)
@@ -57,9 +58,19 @@ func main() {
 	var restarting bool
 
 again:
+	initLogWriter()
 	cmd := exec.Command(binpath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		F("Stdoutpipe error: ", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		F("Stderrpipe error: ", err)
+	}
+
+	go accumulateLog(stdout)
+	go accumulateLog(stderr)
 
 	if err := cmd.Start(); err != nil {
 		P("Error starting", binpath, err)
@@ -83,13 +94,14 @@ again:
 			go checkNames(serverurl, origin, shouldrestart)
 		case <-shouldrestart:
 			if !restarting {
-				cmd.Process.Signal(syscall.SIGINT)
+				cmd.Process.Signal(syscall.SIGQUIT)
 			} else {
 				P("Received from shouldrestart but already restarting, ignored")
 			}
 			// TODO move pprof files out of the dir
 		case <-processexited:
 			if !restarting {
+				time.Sleep(200 * time.Millisecond)
 				goto again
 			}
 		}
