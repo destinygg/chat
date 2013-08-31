@@ -4,68 +4,32 @@ import (
 	"bytes"
 	"encoding/gob"
 	"io/ioutil"
+	"sync"
 	"time"
 )
 
 type Mutes struct {
-	users         map[Userid]time.Time
-	muteuserid    chan *muteUserid
-	isuseridmuted chan *isUseridMuted
-	unmuteuserid  chan Userid
-}
-
-type isUseridMuted struct {
-	userid Userid
-	muted  chan bool
-}
-
-type muteUserid struct {
-	userid Userid
-	t      time.Time
+	users map[Userid]time.Time
+	sync.RWMutex
 }
 
 var (
 	mutes = Mutes{
 		make(map[Userid]time.Time),
-		make(chan *muteUserid),
-		make(chan *isUseridMuted),
-		make(chan Userid),
+		sync.RWMutex{},
 	}
 )
 
 func initMutes() {
-	go mutes.run()
+	mutes.load(false)
 }
 
-func (m *Mutes) run() {
-	m.load()
-	t := time.NewTicker(time.Minute)
-	cp := watchdog.register("mute thread", time.Minute)
-	defer watchdog.unregister("mute thread")
-
-	for {
-		select {
-		case d := <-m.muteuserid:
-			m.users[d.userid] = d.t
-			m.save()
-		case d := <-m.isuseridmuted:
-			if t, ok := m.users[d.userid]; ok {
-				d.muted <- t.After(time.Now().UTC())
-			} else {
-				d.muted <- false
-			}
-		case uid := <-m.unmuteuserid:
-			delete(m.users, uid)
-			m.save()
-		case <-t.C:
-			cp <- true
-			m.clean()
-			m.save()
-		}
+func (m *Mutes) load(skiplock bool) {
+	if !skiplock {
+		m.Lock()
+		defer m.Unlock()
 	}
-}
 
-func (m *Mutes) load() {
 	n, err := ioutil.ReadFile("mutes.dc")
 	if err != nil {
 		D("Error while reading from mutes file")
@@ -79,7 +43,12 @@ func (m *Mutes) load() {
 	}
 }
 
-func (m *Mutes) save() {
+func (m *Mutes) save(skiplock bool) {
+	if !skiplock {
+		m.RLock()
+		defer m.RUnlock()
+	}
+
 	mb := new(bytes.Buffer)
 	enc := gob.NewEncoder(mb)
 	enc.Encode(&m.users)
@@ -90,31 +59,44 @@ func (m *Mutes) save() {
 }
 
 func (m *Mutes) clean() {
-	delcount := 0
-	for userid, unmutetime := range m.users {
-		if unmutetime.Before(time.Now().UTC()) {
-			delete(m.users, userid)
-			delcount++
+	m.Lock()
+	defer m.Unlock()
+
+	for uid, unmutetime := range m.users {
+		if isExpiredUTC(unmutetime) {
+			delete(m.users, uid)
 		}
 	}
+	m.save(true)
 }
 
-func (m *Mutes) muteUserid(userid Userid, duration int64) {
-	m.muteuserid <- &muteUserid{
-		userid,
-		time.Now().UTC().Add(time.Duration(duration)),
-	}
+func (m *Mutes) muteUserid(uid Userid, duration int64) {
+	m.Lock()
+	defer m.Unlock()
+
+	m.users[uid] = time.Now().UTC().Add(time.Duration(duration))
+	m.save(true)
 }
 
 func (m *Mutes) unmuteUserid(uid Userid) {
-	m.unmuteuserid <- uid
+	m.Lock()
+	defer m.Unlock()
+
+	delete(m.users, uid)
+	m.save(true)
 }
 
-func (m *Mutes) isUserMuted(conn *Connection) bool {
-	if conn.user == nil {
+func (m *Mutes) isUserMuted(c *Connection) bool {
+	if c.user == nil {
 		return true
 	}
-	muted := make(chan bool, 1)
-	m.isuseridmuted <- &isUseridMuted{conn.user.id, muted}
-	return <-muted
+
+	m.RLock()
+	defer m.RUnlock()
+
+	t, ok := m.users[c.user.id]
+	if !ok {
+		return false
+	}
+	return !isExpiredUTC(t)
 }

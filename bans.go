@@ -80,14 +80,14 @@ func (b *Bans) clean() {
 	defer b.iplock.Unlock()
 
 	for uid, unbantime := range b.users {
-		if isExpired(unbantime) {
+		if isExpiredUTC(unbantime) {
 			delete(b.users, uid)
 			b.userips[uid] = nil
 		}
 	}
 
 	for ip, unbantime := range b.ips {
-		if isExpired(unbantime) {
+		if isExpiredUTC(unbantime) {
 			delete(b.ips, ip)
 		}
 	}
@@ -97,9 +97,9 @@ func (b *Bans) banUser(uid Userid, targetuid Userid, ban *BanIn) {
 	var expiretime time.Time
 
 	if ban.Ispermanent {
-		expiretime = time.Now().UTC().AddDate(10, 0, 0) // 10 years from now should be enough
+		expiretime = getFuturetimeUTC()
 	} else {
-		expiretime = time.Now().UTC().Add(time.Duration(ban.Duration))
+		expiretime = addDurationUTC(time.Duration(ban.Duration))
 	}
 
 	b.userlock.Lock()
@@ -161,15 +161,11 @@ func (b *Bans) unbanUserid(uid Userid) {
 	D("Unbanned uid: ", uid)
 }
 
-func isExpired(t time.Time) bool {
-	return t.Before(time.Now().UTC())
-}
-
 func isStillBanned(t time.Time, ok bool) bool {
 	if !ok {
 		return false
 	}
-	return !isExpired(t)
+	return !isExpiredUTC(t)
 }
 
 func (b *Bans) isUseridBanned(uid Userid) bool {
@@ -229,7 +225,7 @@ func (b *Bans) loadActive() {
 		}
 
 		if !endtimestamp.Valid {
-			endtimestamp.Time = time.Now().UTC().AddDate(10, 0, 0)
+			endtimestamp.Time = getFuturetimeUTC()
 		}
 
 		if ipaddress.Valid {

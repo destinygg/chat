@@ -275,9 +275,11 @@ func (u *User) assembleSimplifiedUser() {
 	usertools.featurelock.RLock()
 	f, ok := usertools.features[u.features]
 	usertools.featurelock.RUnlock()
+
 	if !ok {
 		usertools.featurelock.Lock()
 		defer usertools.featurelock.Unlock()
+
 		numfeatures := u.featureCount()
 		f = make([]string, 0, numfeatures)
 		if u.featureGet(ISPROTECTED) {

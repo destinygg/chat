@@ -125,10 +125,6 @@ func main() {
 	}
 }
 
-func unixMilliTime() int64 {
-	return time.Now().UTC().Truncate(time.Millisecond).UnixNano() / int64(time.Millisecond)
-}
-
 func Handler(socket *websocket.Conn) {
 	defer socket.Close()
 	r := socket.Request()
@@ -140,4 +136,21 @@ func Handler(socket *websocket.Conn) {
 	}
 
 	newConnection(socket, user)
+}
+
+func unixMilliTime() int64 {
+	return time.Now().UTC().Truncate(time.Millisecond).UnixNano() / int64(time.Millisecond)
+}
+
+// expecting the argument to be in UTC
+func isExpiredUTC(t time.Time) bool {
+	return t.Before(time.Now().UTC())
+}
+
+func addDurationUTC(d time.Duration) time.Time {
+	return time.Now().UTC().Add(d)
+}
+
+func getFuturetimeUTC() time.Time {
+	return time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)
 }
