@@ -37,9 +37,8 @@ type Connection struct {
 }
 
 type SimplifiedUser struct {
-	Nick        string    `json:"nick"`
-	Features    *[]string `json:"features,omitempty"`
-	Connections uint8     `json:"connections,omitempty"`
+	Nick     string    `json:"nick"`
+	Features *[]string `json:"features,omitempty"`
 }
 
 type EventDataIn struct {
@@ -94,14 +93,14 @@ func newConnection(s *websocket.Conn, user *User) {
 
 func (c *Connection) readPumpText() {
 	defer func() {
-		c.Quit()
 		namescache.disconnect(c.user)
+		c.Quit()
 		c.socket.Close()
 	}()
 
 	if c.user != nil {
 		c.rlockUserIfExists()
-		if c.user.simplified.Connections > 5 {
+		if c.user.connections > 5 {
 			c.runlockUserIfExists()
 			c.SendError("toomanyconnections")
 			c.stop <- true
@@ -189,11 +188,11 @@ func (c *Connection) writePumpText() {
 			return
 		case <-c.stop:
 			return
-		case message := <-c.blocksend:
+		case m := <-c.blocksend:
 			c.rlockUserIfExists()
-			if data, err := Marshal(message.data); err == nil {
+			if data, err := Marshal(m.data); err == nil {
 				c.runlockUserIfExists()
-				if data, err := Pack(message.event, data); err == nil {
+				if data, err := Pack(m.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
@@ -201,11 +200,11 @@ func (c *Connection) writePumpText() {
 			} else {
 				c.runlockUserIfExists()
 			}
-		case message := <-c.send:
+		case m := <-c.send:
 			c.rlockUserIfExists()
-			if data, err := Marshal(message.data); err == nil {
+			if data, err := Marshal(m.data); err == nil {
 				c.runlockUserIfExists()
-				if data, err := Pack(message.event, data); err == nil {
+				if data, err := Pack(m.event, data); err == nil {
 					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
 						return
 					}
@@ -246,6 +245,7 @@ func (c *Connection) Emit(event string, data interface{}) {
 		data:  data,
 	}
 }
+
 func (c *Connection) EmitBlock(event string, data interface{}) {
 	c.blocksend <- &message{
 		event: event,
@@ -253,6 +253,7 @@ func (c *Connection) EmitBlock(event string, data interface{}) {
 	}
 	return
 }
+
 func (c *Connection) Broadcast(event string, data *EventDataOut) {
 	c.rlockUserIfExists()
 	marshalled, _ := Marshal(data)
@@ -291,7 +292,21 @@ func (c *Connection) getEventDataOut() *EventDataOut {
 
 func (c *Connection) Join() {
 	if c.user != nil {
-		c.Broadcast("JOIN", c.getEventDataOut())
+		c.rlockUserIfExists()
+		defer c.runlockUserIfExists()
+		if c.user.connections == 1 {
+			c.Broadcast("JOIN", c.getEventDataOut())
+		}
+	}
+}
+
+func (c *Connection) Quit() {
+	if c.user != nil {
+		c.rlockUserIfExists()
+		defer c.runlockUserIfExists()
+		if c.user.connections <= 0 {
+			c.Broadcast("QUIT", c.getEventDataOut())
+		}
 	}
 }
 
@@ -551,12 +566,6 @@ func (c *Connection) OnPing(data []byte) {
 }
 
 func (c *Connection) OnPong(data []byte) {
-}
-
-func (c *Connection) Quit() {
-	if c.user != nil {
-		c.Broadcast("QUIT", c.getEventDataOut())
-	}
 }
 
 func (c *Connection) SendError(identifier string) {

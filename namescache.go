@@ -10,7 +10,7 @@ type namesCache struct {
 	usercount        uint32
 	adduser          chan *userChan
 	refreshuser      chan *User
-	discuser         chan *User
+	discuser         chan *userChan
 	addconnection    chan bool
 	removeconnection chan bool
 	getnames         chan chan []byte
@@ -32,7 +32,7 @@ var namescache = namesCache{
 	usercount:        0,
 	adduser:          make(chan *userChan),
 	refreshuser:      make(chan *User),
-	discuser:         make(chan *User),
+	discuser:         make(chan *userChan),
 	addconnection:    make(chan bool),
 	removeconnection: make(chan bool),
 	getnames:         make(chan chan []byte),
@@ -65,30 +65,31 @@ func (nc *namesCache) run() {
 			nc.usercount++
 			if u, ok := nc.users[uc.user.id]; ok {
 				u.Lock()
-				u.simplified.Connections++
+				u.connections++
 				u.Unlock()
 			} else {
+				uc.user.connections++
 				su := &SimplifiedUser{
-					Nick:        uc.user.nick,
-					Features:    uc.user.simplified.Features,
-					Connections: 1,
+					Nick:     uc.user.nick,
+					Features: uc.user.simplified.Features,
 				}
 				uc.user.simplified = su
 				nc.users[uc.user.id] = uc.user
 			}
 			uc.c <- nc.users[uc.user.id]
 			nc.marshalNames()
-		case user := <-nc.discuser:
+		case uc := <-nc.discuser:
 			nc.usercount--
-			if u, ok := nc.users[user.id]; ok {
+			if u, ok := nc.users[uc.user.id]; ok {
 				u.Lock()
-				u.simplified.Connections--
-				if u.simplified.Connections <= 0 {
-					delete(nc.users, user.id)
+				u.connections--
+				if u.connections <= 0 {
+					delete(nc.users, u.id)
 				}
 				u.Unlock()
 			}
 			nc.marshalNames()
+			close(uc.c)
 		case <-nc.addconnection:
 			nc.usercount++
 			nc.marshalNames()
@@ -132,7 +133,9 @@ func (nc *namesCache) add(user *User) *User {
 
 func (nc *namesCache) disconnect(user *User) {
 	if user != nil {
-		nc.discuser <- user
+		c := make(chan *User, 1)
+		nc.discuser <- &userChan{user, c}
+		<-c
 	} else {
 		nc.removeconnection <- true
 	}

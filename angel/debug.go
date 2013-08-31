@@ -23,7 +23,7 @@ var (
 )
 
 func initLog() {
-	logger = log.New(accumulatewriter, "angel", log.Ldate|log.Ltime)
+	logger = log.New(accumulatewriter, "angel> ", log.Ldate|log.Ltime)
 	go consumeLog()
 }
 

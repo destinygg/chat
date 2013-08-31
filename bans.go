@@ -5,51 +5,25 @@ import (
 	"fmt"
 	"github.com/go-sql-driver/mysql"
 	"github.com/vmihailenco/redis"
+	"sync"
 	"time"
 )
 
 type Bans struct {
-	users          map[Userid]time.Time
-	ips            map[string]time.Time
-	userips        map[Userid][]string
-	isipbanned     chan *isIPBanned
-	banip          chan *banIP
-	isuseridbanned chan *isUseridBanned
-	banuserid      chan *banUserid
-	unbanuserid    chan Userid
-}
-
-type isIPBanned struct {
-	ip     string
-	banned chan bool
-}
-
-type banIP struct {
-	userid Userid
-	ip     string
-	t      time.Time
-}
-
-type isUseridBanned struct {
-	userid Userid
-	banned chan bool
-}
-
-type banUserid struct {
-	userid Userid
-	t      time.Time
+	users    map[Userid]time.Time
+	userlock sync.RWMutex
+	ips      map[string]time.Time
+	userips  map[Userid][]string
+	iplock   sync.RWMutex // protects both ips/userips
 }
 
 var (
 	bans = Bans{
 		make(map[Userid]time.Time),
+		sync.RWMutex{},
 		make(map[string]time.Time),
 		make(map[Userid][]string),
-		make(chan *isIPBanned),
-		make(chan *banIP),
-		make(chan *isUseridBanned),
-		make(chan *banUserid),
-		make(chan Userid),
+		sync.RWMutex{},
 	}
 )
 
@@ -69,33 +43,6 @@ func (b *Bans) run(redisdb int64) {
 		case <-t.C:
 			cp <- true
 			b.clean()
-		case uid := <-b.unbanuserid:
-			delete(b.users, uid)
-			for _, ip := range b.userips[uid] {
-				delete(b.ips, ip)
-				D("Unbanned IP: ", ip, "for userid:", uid)
-			}
-			b.userips[uid] = nil
-		case d := <-b.banuserid:
-			b.users[d.userid] = d.t
-		case d := <-b.isuseridbanned:
-			if t, ok := b.users[d.userid]; ok {
-				d.banned <- t.After(time.Now().UTC())
-			} else {
-				d.banned <- false
-			}
-		case d := <-b.banip:
-			b.ips[d.ip] = d.t
-			if _, ok := b.userips[d.userid]; !ok {
-				b.userips[d.userid] = make([]string, 0, 1)
-			}
-			b.userips[d.userid] = append(b.userips[d.userid], d.ip)
-		case d := <-b.isipbanned:
-			if t, ok := b.ips[d.ip]; ok {
-				d.banned <- t.After(time.Now().UTC())
-			} else {
-				d.banned <- false
-			}
 		case m := <-refreshban:
 			if m.Err != nil {
 				D("Error receiving from redis pub/sub channel refreshbans")
@@ -127,25 +74,26 @@ refreshagain:
 }
 
 func (b *Bans) clean() {
-	delcount := 0
-	for userid, unbantime := range b.users {
-		if unbantime.Before(time.Now().UTC()) {
-			delete(b.users, userid)
-			b.userips[userid] = nil
-			delcount++
+	b.userlock.Lock()
+	defer b.userlock.Unlock()
+	b.iplock.Lock()
+	defer b.iplock.Unlock()
+
+	for uid, unbantime := range b.users {
+		if isExpired(unbantime) {
+			delete(b.users, uid)
+			b.userips[uid] = nil
 		}
 	}
 
-	delcount = 0
 	for ip, unbantime := range b.ips {
-		if unbantime.Before(time.Now().UTC()) {
+		if isExpired(unbantime) {
 			delete(b.ips, ip)
-			delcount++
 		}
 	}
 }
 
-func (b *Bans) banUser(userid Userid, targetuserid Userid, ban *BanIn) {
+func (b *Bans) banUser(uid Userid, targetuid Userid, ban *BanIn) {
 	var expiretime time.Time
 
 	if ban.Ispermanent {
@@ -154,50 +102,99 @@ func (b *Bans) banUser(userid Userid, targetuserid Userid, ban *BanIn) {
 		expiretime = time.Now().UTC().Add(time.Duration(ban.Duration))
 	}
 
-	b.banuserid <- &banUserid{targetuserid, expiretime}
-	b.log(userid, targetuserid, ban, "")
+	b.userlock.Lock()
+	b.users[targetuid] = expiretime
+	b.userlock.Unlock()
+	b.log(uid, targetuid, ban, "")
 
 	if ban.BanIP {
-		ips := getIPCacheForUser(targetuserid)
+		ips := getIPCacheForUser(targetuid)
 		if len(ips) == 0 {
-			D("No ips found in cache for user", targetuserid)
-			ips = hub.getIPsForUserid(targetuserid)
+			D("No ips found in cache for user", targetuid)
+			ips = hub.getIPsForUserid(targetuid)
 			if len(ips) == 0 {
-				D("No ips found for user (offline)", targetuserid)
+				D("No ips found for user (offline)", targetuid)
 			}
 		}
+
+		b.iplock.Lock()
+		defer b.iplock.Unlock()
 		for _, ip := range ips {
-			b.banip <- &banIP{targetuserid, ip, expiretime}
+			b.banIP(targetuid, ip, expiretime, true)
 			hub.ipbans <- ip
-			b.log(userid, targetuserid, ban, ip)
-			D("IPBanned user", ban.Nick, targetuserid, "with ip:", ip)
+			b.log(uid, targetuid, ban, ip)
+			D("IPBanned user", ban.Nick, targetuid, "with ip:", ip)
 		}
+
 	}
 
-	hub.bans <- targetuserid
-	D("Banned user", ban.Nick, targetuserid)
+	hub.bans <- targetuid
+	D("Banned user", ban.Nick, targetuid)
 }
 
-func (b *Bans) unbanUserid(userid Userid) {
-	b.logUnban(userid)
-	b.unbanuserid <- userid
-	D("Unbanned userid: ", userid)
-}
-
-func (b *Bans) isUseridIPBanned(ip string, uid Userid) bool {
-	c := make(chan bool, 1)
-	b.isipbanned <- &isIPBanned{ip, c}
-	res := <-c
-	if res || uid == 0 {
-		return res
+func (b *Bans) banIP(uid Userid, ip string, t time.Time, skiplock bool) {
+	if !skiplock { // because the caller holds the locks
+		b.iplock.Lock()
+		defer b.iplock.Unlock()
 	}
 
-	b.isuseridbanned <- &isUseridBanned{uid, c}
-	res = <-c
-	return res
+	b.ips[ip] = t
+	if _, ok := b.userips[uid]; !ok {
+		b.userips[uid] = make([]string, 0, 1)
+	}
+	b.userips[uid] = append(b.userips[uid], ip)
+}
+
+func (b *Bans) unbanUserid(uid Userid) {
+	b.logUnban(uid)
+	b.userlock.Lock()
+	defer b.userlock.Unlock()
+	b.iplock.Lock()
+	defer b.iplock.Unlock()
+
+	delete(b.users, uid)
+	for _, ip := range b.userips[uid] {
+		delete(b.ips, ip)
+		D("Unbanned IP: ", ip, "for uid:", uid)
+	}
+	b.userips[uid] = nil
+	D("Unbanned uid: ", uid)
+}
+
+func isExpired(t time.Time) bool {
+	return t.Before(time.Now().UTC())
+}
+
+func isStillBanned(t time.Time, ok bool) bool {
+	if !ok {
+		return false
+	}
+	return !isExpired(t)
+}
+
+func (b *Bans) isUseridBanned(uid Userid) bool {
+	if uid == 0 {
+		return false
+	}
+	b.userlock.RLock()
+	defer b.userlock.RUnlock()
+	t, ok := b.users[uid]
+	return isStillBanned(t, ok)
+}
+
+func (b *Bans) isIPBanned(ip string) bool {
+	b.iplock.RLock()
+	defer b.iplock.RUnlock()
+	t, ok := b.ips[ip]
+	return isStillBanned(t, ok)
 }
 
 func (b *Bans) loadActive() {
+	b.userlock.Lock()
+	defer b.userlock.Unlock()
+	b.iplock.Lock()
+	defer b.iplock.Unlock()
+
 	// purge all the bans
 	b.users = make(map[Userid]time.Time)
 	b.ips = make(map[string]time.Time)
@@ -249,7 +246,7 @@ func (b *Bans) loadActive() {
 	}
 }
 
-func (b *Bans) log(userid Userid, targetuserid Userid, ban *BanIn, ip string) {
+func (b *Bans) log(uid Userid, targetuid Userid, ban *BanIn, ip string) {
 
 	ipaddress := &sql.NullString{}
 	if ban.BanIP && len(ip) != 0 {
@@ -264,15 +261,15 @@ func (b *Bans) log(userid Userid, targetuserid Userid, ban *BanIn, ip string) {
 		endtimestamp.Valid = true
 	}
 
-	_, err := banstatement.Exec(userid, targetuserid, ipaddress, ban.Reason, starttimestamp, endtimestamp)
+	_, err := banstatement.Exec(uid, targetuid, ipaddress, ban.Reason, starttimestamp, endtimestamp)
 
 	if err != nil {
 		D("Unable to insert ban: ", err)
 	}
 }
 
-func (b *Bans) logUnban(targetuserid Userid) {
-	_, err := unbanstatement.Exec(targetuserid)
+func (b *Bans) logUnban(targetuid Userid) {
+	_, err := unbanstatement.Exec(targetuid)
 
 	if err != nil {
 		D("Unable to insert ban: ", err)
