@@ -229,7 +229,7 @@ func (u *User) isModerator() bool {
 
 // isSubscriber checks if the user can speak when the chat is in submode
 func (u *User) isSubscriber() bool {
-	return u.featureGet(ISSUBSCRIBER | ISADMIN | ISMODERATOR | ISVIP)
+	return u.featureGet(ISSUBSCRIBER | ISADMIN | ISMODERATOR | ISVIP | ISBOT)
 }
 
 // isBot checks if the user is exempt from ratelimiting
