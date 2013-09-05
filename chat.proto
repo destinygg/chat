@@ -112,20 +112,20 @@ message Message {
 }
 
 message Mute {
-	optional string nick = 1; // user who does the deed, optional because when the client sends it its not present
+	optional User user = 1; // user who does the deed, optional because when the client sends it its not present
 	required string targetnick = 2;
 	optional int64 duration = 3 [default = 0];
 	optional int64 timestamp = 4;
 }
 
 message Unmute {
-	optional string nick = 1;
+	optional User user = 1;
 	required string targetnick = 2;
 	optional int64 timestamp = 3;
 }
 
 message Ban {
-	optional string nick = 1;
+	optional User user = 1;
 	required string targetnick = 2;
 	required string reason = 3;
 	optional int64 duration = 4 [default = 0];
@@ -135,7 +135,7 @@ message Ban {
 }
 
 message Unban {
-	optional string nick = 1;
+	optional User user = 1;
 	required string targetnick = 2;
 	optional int64 timestamp = 3;
 }
@@ -145,8 +145,9 @@ message Mode {
 		SUBONLY = 0;
 		UNSUBONLY = 1;
 	}
-	required Mode mode = 1;
-	optional int64 timestamp = 2;
+	optional User user = 1;
+	required Mode mode = 2;
+	optional int64 timestamp = 3;
 }
 
 message Ping {
