@@ -301,7 +301,7 @@ func (u *User) assembleSimplifiedUser() {
 			f = append(f, "bot")
 		}
 
-		for i := uint8(6); i <= 28; i++ {
+		for i := uint8(6); i <= 26; i++ {
 			if u.featureGet(1 << i) {
 				flair := fmt.Sprintf("flair%d", i-6)
 				f = append(f, flair)

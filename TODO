@@ -1,5 +1,6 @@
 
 more general todo, shortterm:
+ ☐ persist options that are worth persisting between restarts
  ☐ direct messages
  ☐ privileged web interface for introspecting the chat and influencing behaviour (like throttle times)
  
