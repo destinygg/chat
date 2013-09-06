@@ -17,6 +17,8 @@ message Event {
 		QUIT = 11;
 		ERROR = 12;
 		REFRESH = 13;
+		OPEN = 14;
+		CLOSE = 15;
 	}
 	required Event event = 1;
 	optional Error error = 2;
@@ -46,45 +48,45 @@ message Error {
 		SUBONLY = 8;
 		BANNED = 9;
 		MUTED = 10;
+		SOCKETERROR = 11;
 	}
 	required Error error = 1;
 }
 
-enum Feature {
-	ADMINISTRATOR = 1;
-	MODERATOR = 2;
-	VIP = 3;
-	PROTECTED = 4;
-	SUBSCRIBER = 5;
-	BOT = 6;
-	FLAIR1 = 7;
-	FLAIR2 = 8;
-	FLAIR3 = 9;
-	FLAIR4 = 10;
-	FLAIR5 = 11;
-	FLAIR6 = 12;
-	FLAIR7 = 13;
-	FLAIR8 = 14;
-	FLAIR9 = 15;
-	FLAIR10 = 16;
-	FLAIR11 = 17;
-	FLAIR12 = 18;
-	FLAIR13 = 19;
-	FLAIR14 = 20;
-	FLAIR15 = 22;
-	FLAIR16 = 23;
-	FLAIR17 = 24;
-	FLAIR18 = 25;
-	FLAIR19 = 26;
-	FLAIR20 = 27;
-	FLAIR21 = 28;
-	FLAIR22 = 29;
-	FLAIR23 = 30;
-	FLAIR24 = 31;
-	FLAIR25 = 32;
-}
-
 message User { // for embedding into other messages only
+	enum Feature {
+		ADMINISTRATOR = 1;
+		MODERATOR = 2;
+		VIP = 3;
+		PROTECTED = 4;
+		SUBSCRIBER = 5;
+		BOT = 6;
+		FLAIR1 = 7;
+		FLAIR2 = 8;
+		FLAIR3 = 9;
+		FLAIR4 = 10;
+		FLAIR5 = 11;
+		FLAIR6 = 12;
+		FLAIR7 = 13;
+		FLAIR8 = 14;
+		FLAIR9 = 15;
+		FLAIR10 = 16;
+		FLAIR11 = 17;
+		FLAIR12 = 18;
+		FLAIR13 = 19;
+		FLAIR14 = 20;
+		FLAIR15 = 22;
+		FLAIR16 = 23;
+		FLAIR17 = 24;
+		FLAIR18 = 25;
+		FLAIR19 = 26;
+		FLAIR20 = 27;
+		FLAIR21 = 28;
+		FLAIR22 = 29;
+		FLAIR23 = 30;
+		FLAIR24 = 31;
+		FLAIR25 = 32;
+	}
 	required string nick = 1;
 	repeated Feature features = 2;
 }
@@ -106,9 +108,8 @@ message Quit {
 
 message Message {
 	optional User user = 1;
-	repeated Feature features = 2;
-	required string message = 3;
-	optional int64 timestamp = 4;
+	required string message = 2;
+	optional int64 timestamp = 3;
 }
 
 message Mute {
