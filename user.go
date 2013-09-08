@@ -103,7 +103,10 @@ func (ut *userTools) loadUserids() {
 func (ut *userTools) getUseridForNick(nick string) (Userid, bool) {
 	ut.nicklock.RLock()
 	defer ut.nicklock.RUnlock()
-	d, _ := ut.nicklookup[strings.ToLower(nick)]
+	d, ok := ut.nicklookup[strings.ToLower(nick)]
+	if !ok {
+		return 0, false
+	}
 	return d.id, d.protected
 }
 
@@ -169,7 +172,7 @@ type User struct {
 	lastactive      time.Time
 	delayscale      uint8
 	simplified      *SimplifiedUser
-	connections     uint8
+	connections     int32
 	sync.RWMutex
 }
 
