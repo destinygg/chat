@@ -21,7 +21,6 @@ func initDatabase(dbtype string, dbdsn string) {
 		B("Could not connect to database: ", err, err2)
 		time.Sleep(time.Second)
 		initDatabase(dbtype, dbdsn)
-		return
 	}
 }
 
@@ -65,6 +64,9 @@ func insertChatEvent(userid Userid, event string, data *EventDataOut, retry bool
 	_, err = insertstatement.Exec(userid, targetuserid, event, d, ts)
 	if err != nil {
 		D("Unable to insert event: ", err)
+		if retry {
+			insertChatEvent(userid, event, data, false)
+		}
 	}
 }
 
@@ -175,6 +177,9 @@ func deleteBan(targetuid Userid, retry bool) {
 	_, err = unbanstatement.Exec(targetuid)
 	if err != nil {
 		D("Unable to unban: ", err)
+		if retry {
+			deleteBan(targetuid, false)
+		}
 	}
 }
 
