@@ -13,17 +13,17 @@ func TestMuteTimes(t *testing.T) {
 	c.user = &User{}
 	c.user.id = uid
 
-	mutes.users[uid] = timeinfuture
+	state.mutes[uid] = timeinfuture
 	if !mutes.isUserMuted(c) {
 		t.Error("user should be banned because the expiretime is in the future")
 	}
-	mutes.users[uid] = timeinpast
+	state.mutes[uid] = timeinpast
 	if mutes.isUserMuted(c) {
 		t.Error("user should NOT be banned because the expiretime is in the past")
 	}
 
 	mutes.clean()
-	if len(mutes.users) > 0 {
+	if len(state.mutes) > 0 {
 		t.Error("mutes.clean did not clean the users")
 	}
 }
