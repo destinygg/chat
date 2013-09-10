@@ -9,14 +9,12 @@ import (
 
 var db *sql.DB
 var dblock = sync.RWMutex{}
-var dberror chan bool
 
 func initDatabase(dbtype string, dbdsn string) {
 	dblock.Lock()
 	defer dblock.Unlock()
 
 	var err error
-	dberror = make(chan bool, 512)
 	db, err = sql.Open(dbtype, dbdsn)
 	err2 := db.Ping()
 	if err != nil || err2 != nil {
