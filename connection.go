@@ -265,7 +265,7 @@ func (c *Connection) Broadcast(event string, data *EventDataOut) {
 	}
 	hub.broadcast <- m
 	// by definition only users can send messages
-	logEvent(c.user.id, event, data)
+	insertChatEvent(c.user.id, event, data)
 }
 
 func (c *Connection) canModerateUser(nick string) (bool, Userid) {

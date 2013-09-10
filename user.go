@@ -66,36 +66,10 @@ func initUsers(redisdb int64) {
 func (ut *userTools) loadUserids() {
 	ut.nicklock.Lock()
 	defer ut.nicklock.Unlock()
-	rows, err := db.Query(`
-		SELECT DISTINCT
-			u.userId,
-			u.username,
-			IF(IFNULL(f.featureId, 0) >= 1, 1, 0) AS protected
-		FROM dfl_users AS u
-		LEFT JOIN dfl_users_features AS f ON (
-			f.userId = u.userId AND
-			featureId = (SELECT featureId FROM dfl_features WHERE featureName IN("protected", "admin") LIMIT 1)
-		)
-	`)
 
-	if err != nil {
-		B("Unable to load userids:", err)
-		return
-	}
-
-	for rows.Next() {
-		var uid Userid
-		var nick string
-		var protected bool
-
-		err = rows.Scan(&uid, &nick, &protected)
-		if err != nil {
-			B("Unable to scan row: ", err)
-			continue
-		}
-
+	getUsers(func(uid Userid, nick string, protected bool) {
 		ut.nicklookup[strings.ToLower(nick)] = &uidprot{uid, protected}
-	}
+	})
 
 	D("Loaded", len(ut.nicklookup), "nicks")
 }

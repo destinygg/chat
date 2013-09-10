@@ -115,7 +115,6 @@ func main() {
 	initMutes()
 	initBans(redisdb)
 	initUsers(redisdb)
-	initEventlog()
 
 	http.Handle("/ws", websocket.Handler(Handler))
 

@@ -196,34 +196,7 @@ func (b *Bans) loadActive() {
 	b.ips = make(map[string]time.Time)
 	b.userips = make(map[Userid][]string)
 
-	rows, err := db.Query(`
-		SELECT
-			targetuserid,
-			ipaddress,
-			endtimestamp
-		FROM bans
-		WHERE
-			endtimestamp IS NULL OR
-			endtimestamp > NOW()
-		GROUP BY targetuserid, ipaddress
-	`)
-
-	if err != nil {
-		B("Unable to get active bans: ", err)
-		return
-	}
-
-	for rows.Next() {
-		var uid Userid
-		var ipaddress sql.NullString
-		var endtimestamp mysql.NullTime
-		err = rows.Scan(&uid, &ipaddress, &endtimestamp)
-
-		if err != nil {
-			B("Unable to scan row: ", err)
-			continue
-		}
-
+	getBans(func(uid Userid, ipaddress sql.NullString, endtimestamp mysql.NullTime) {
 		if !endtimestamp.Valid {
 			endtimestamp.Time = getFuturetimeUTC()
 		}
@@ -238,36 +211,13 @@ func (b *Bans) loadActive() {
 		} else {
 			b.users[uid] = endtimestamp.Time
 		}
-
-	}
+	})
 }
 
 func (b *Bans) log(uid Userid, targetuid Userid, ban *BanIn, ip string) {
-
-	ipaddress := &sql.NullString{}
-	if ban.BanIP && len(ip) != 0 {
-		ipaddress.String = ip
-		ipaddress.Valid = true
-	}
-	starttimestamp := time.Now().UTC()
-
-	endtimestamp := &mysql.NullTime{}
-	if !ban.Ispermanent {
-		endtimestamp.Time = starttimestamp.Add(time.Duration(ban.Duration))
-		endtimestamp.Valid = true
-	}
-
-	_, err := banstatement.Exec(uid, targetuid, ipaddress, ban.Reason, starttimestamp, endtimestamp)
-
-	if err != nil {
-		D("Unable to insert ban: ", err)
-	}
+	insertBan(uid, targetuid, ban, ip)
 }
 
 func (b *Bans) logUnban(targetuid Userid) {
-	_, err := unbanstatement.Exec(targetuid)
-
-	if err != nil {
-		D("Unable to insert ban: ", err)
-	}
+	deleteBan(targetuid)
 }
