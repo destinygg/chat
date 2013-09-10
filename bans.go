@@ -215,9 +215,9 @@ func (b *Bans) loadActive() {
 }
 
 func (b *Bans) log(uid Userid, targetuid Userid, ban *BanIn, ip string) {
-	insertBan(uid, targetuid, ban, ip)
+	insertBan(uid, targetuid, ban, ip, true)
 }
 
 func (b *Bans) logUnban(targetuid Userid) {
-	deleteBan(targetuid)
+	deleteBan(targetuid, true)
 }

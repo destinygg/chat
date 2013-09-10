@@ -25,7 +25,7 @@ func initDatabase(dbtype string, dbdsn string) {
 	}
 }
 
-func insertChatEvent(userid Userid, event string, data *EventDataOut) {
+func insertChatEvent(userid Userid, event string, data *EventDataOut, retry bool) {
 	dblock.RLock()
 	defer dblock.RUnlock()
 
@@ -41,6 +41,10 @@ func insertChatEvent(userid Userid, event string, data *EventDataOut) {
 
 	if err != nil {
 		B("Unable to create insert statement: ", err)
+		if retry {
+			insertChatEvent(userid, event, data, false)
+		}
+		return
 	}
 	defer insertstatement.Close()
 
@@ -64,7 +68,7 @@ func insertChatEvent(userid Userid, event string, data *EventDataOut) {
 	}
 }
 
-func insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string) {
+func insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string, retry bool) {
 	dblock.RLock()
 	defer dblock.RUnlock()
 
@@ -81,6 +85,10 @@ func insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string) {
 
 	if err != nil {
 		B("Unable to create ban statement: ", err)
+		if retry {
+			insertBan(uid, targetuid, ban, ip, false)
+		}
+		return
 	}
 	defer banstatement.Close()
 
@@ -140,7 +148,7 @@ func getBans(f func(Userid, sql.NullString, mysql.NullTime)) {
 	}
 }
 
-func deleteBan(targetuid Userid) {
+func deleteBan(targetuid Userid, retry bool) {
 	dblock.RLock()
 	defer dblock.RUnlock()
 
@@ -157,6 +165,10 @@ func deleteBan(targetuid Userid) {
 
 	if err != nil {
 		B("Unable to create unban statement: ", err)
+		if retry {
+			deleteBan(targetuid, false)
+		}
+		return
 	}
 	defer unbanstatement.Close()
 
