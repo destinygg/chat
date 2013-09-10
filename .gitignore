@@ -3,3 +3,4 @@ settings.cfg
 *.sublime-*
 deploy.sh
 *.pprof
+.state.dc

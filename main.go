@@ -6,15 +6,31 @@ http://www.apache.org/licenses/LICENSE-2.0.html
 package main
 
 import (
+	"bytes"
 	"code.google.com/p/go.net/websocket"
+	"encoding/gob"
 	_ "expvar"
 	"fmt"
 	"github.com/davecheney/profile"
 	conf "github.com/msbranco/goconfig"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"runtime"
+	"sync"
 	"time"
+)
+
+type State struct {
+	mutes   map[Userid]time.Time
+	submode bool
+	sync.RWMutex
+}
+
+var (
+	state = &State{
+		mutes: make(map[Userid]time.Time),
+	}
 )
 
 const (
@@ -106,13 +122,14 @@ func main() {
 		}).Stop()
 	}
 
+	state.load()
+
 	initWatchdog()
 	initNamesCache()
 	initHub()
 	initDatabase(dbtype, dbdsn)
 	initRedis(redisaddr, redisdb, redispw)
 
-	initMutes()
 	initBans(redisdb)
 	initUsers(redisdb)
 
@@ -152,4 +169,44 @@ func addDurationUTC(d time.Duration) time.Time {
 
 func getFuturetimeUTC() time.Time {
 	return time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC)
+}
+
+func (s *State) load() {
+	s.Lock()
+	defer s.Unlock()
+
+	b, err := ioutil.ReadFile(".state.dc")
+	if err != nil {
+		D("Error while reading from states file", err)
+		return
+	}
+	mb := bytes.NewBuffer(b)
+	dec := gob.NewDecoder(mb)
+	err = dec.Decode(&s.mutes)
+	if err != nil {
+		D("Error decoding mutes from states file", err)
+	}
+	err = dec.Decode(&s.submode)
+	if err != nil {
+		D("Error decoding submode from states file", err)
+	}
+}
+
+// expects to be called with locks held
+func (s *State) save() {
+	mb := new(bytes.Buffer)
+	enc := gob.NewEncoder(mb)
+	err := enc.Encode(&s.mutes)
+	if err != nil {
+		D("Error encoding mutes:", err)
+	}
+	err = enc.Encode(&s.submode)
+	if err != nil {
+		D("Error encoding submode:", err)
+	}
+
+	err = ioutil.WriteFile(".state.dc", mb.Bytes(), 0600)
+	if err != nil {
+		D("Error with writing out state file:", err)
+	}
 }

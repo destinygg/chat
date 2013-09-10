@@ -2,7 +2,6 @@ package main
 
 import (
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
@@ -16,8 +15,6 @@ type Hub struct {
 	getips      chan useridips
 	users       map[Userid]*User
 	refreshuser chan Userid
-	submode     uint32
-	sublock     chan bool
 }
 
 type useridips struct {
@@ -35,7 +32,6 @@ var hub = Hub{
 	getips:      make(chan useridips),
 	users:       make(map[Userid]*User),
 	refreshuser: make(chan Userid, 4),
-	submode:     0,
 }
 
 func initHub() {
@@ -101,12 +97,6 @@ func (hub *Hub) run() {
 					c.ping <- t
 				}
 			}
-		case d := <-hub.sublock:
-			if d {
-				atomic.StoreUint32(&hub.submode, 1)
-			} else {
-				atomic.StoreUint32(&hub.submode, 0)
-			}
 		}
 	}
 }
@@ -118,8 +108,10 @@ func (hub *Hub) getIPsForUserid(userid Userid) []string {
 }
 
 func (hub *Hub) canUserSpeak(c *Connection) bool {
-	submode := atomic.LoadUint32(&hub.submode)
-	if submode == 0 || c.user.isSubscriber() {
+	state.RLock()
+	defer state.RUnlock()
+
+	if !state.submode || c.user.isSubscriber() {
 		return true
 	}
 
@@ -127,9 +119,9 @@ func (hub *Hub) canUserSpeak(c *Connection) bool {
 }
 
 func (hub *Hub) toggleSubmode(enabled bool) {
-	var val uint32
-	if enabled {
-		val = 1
-	}
-	atomic.StoreUint32(&hub.submode, val)
+	state.Lock()
+	defer state.Unlock()
+
+	state.submode = enabled
+	state.save()
 }
