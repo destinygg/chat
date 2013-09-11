@@ -25,8 +25,7 @@ func initDatabase(dbtype string, dbdsn string) {
 }
 
 func insertChatEvent(userid Userid, event string, data *EventDataOut, retry bool) {
-	dblock.RLock()
-	defer dblock.RUnlock()
+	dblock.Lock()
 
 	insertstatement, err := db.Prepare(`
 		INSERT INTO chatlog
@@ -40,6 +39,7 @@ func insertChatEvent(userid Userid, event string, data *EventDataOut, retry bool
 
 	if err != nil {
 		B("Unable to create insert statement: ", err)
+		dblock.Unlock()
 		if retry {
 			insertChatEvent(userid, event, data, false)
 		}
@@ -62,6 +62,7 @@ func insertChatEvent(userid Userid, event string, data *EventDataOut, retry bool
 	// the timestamp is milisecond precision
 	ts := time.Unix(data.Timestamp/1000, 0).UTC()
 	_, err = insertstatement.Exec(userid, targetuserid, event, d, ts)
+	dblock.Unlock()
 	if err != nil {
 		D("Unable to insert event: ", err)
 		if retry {
@@ -71,8 +72,7 @@ func insertChatEvent(userid Userid, event string, data *EventDataOut, retry bool
 }
 
 func insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string, retry bool) {
-	dblock.RLock()
-	defer dblock.RUnlock()
+	dblock.Lock()
 
 	banstatement, err := db.Prepare(`
 		INSERT INTO bans
@@ -87,6 +87,7 @@ func insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string, retry bool) 
 
 	if err != nil {
 		B("Unable to create ban statement: ", err)
+		dblock.Unlock()
 		if retry {
 			insertBan(uid, targetuid, ban, ip, false)
 		}
@@ -108,14 +109,18 @@ func insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string, retry bool) 
 	}
 
 	_, err = banstatement.Exec(uid, targetuid, ipaddress, ban.Reason, starttimestamp, endtimestamp)
+	dblock.Unlock()
 	if err != nil {
 		D("Unable to insert ban: ", err)
+		if retry {
+			insertBan(uid, targetuid, ban, ip, false)
+		}
 	}
 }
 
 func getBans(f func(Userid, sql.NullString, mysql.NullTime)) {
-	dblock.RLock()
-	defer dblock.RUnlock()
+	dblock.Lock()
+	defer dblock.Unlock()
 
 	rows, err := db.Query(`
 		SELECT
@@ -151,8 +156,7 @@ func getBans(f func(Userid, sql.NullString, mysql.NullTime)) {
 }
 
 func deleteBan(targetuid Userid, retry bool) {
-	dblock.RLock()
-	defer dblock.RUnlock()
+	dblock.Lock()
 
 	unbanstatement, err := db.Prepare(`
 		UPDATE bans
@@ -167,6 +171,7 @@ func deleteBan(targetuid Userid, retry bool) {
 
 	if err != nil {
 		B("Unable to create unban statement: ", err)
+		dblock.Unlock()
 		if retry {
 			deleteBan(targetuid, false)
 		}
@@ -175,6 +180,7 @@ func deleteBan(targetuid Userid, retry bool) {
 	defer unbanstatement.Close()
 
 	_, err = unbanstatement.Exec(targetuid)
+	dblock.Unlock()
 	if err != nil {
 		D("Unable to unban: ", err)
 		if retry {
@@ -184,8 +190,8 @@ func deleteBan(targetuid Userid, retry bool) {
 }
 
 func getUsers(f func(Userid, string, bool)) {
-	dblock.RLock()
-	defer dblock.RUnlock()
+	dblock.Lock()
+	defer dblock.Unlock()
 
 	rows, err := db.Query(`
 		SELECT DISTINCT
