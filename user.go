@@ -81,10 +81,19 @@ func (ut *userTools) getUseridForNick(nick string) (Userid, bool) {
 	return d.id, d.protected
 }
 
-func (ut *userTools) addUser(u *User) {
+func (ut *userTools) addUser(u *User, force bool) {
+	lowernick := strings.ToLower(u.nick)
+	if !force {
+		ut.nicklock.RLock()
+		_, ok := ut.nicklookup[lowernick]
+		ut.nicklock.RUnlock()
+		if ok {
+			return
+		}
+	}
 	ut.nicklock.Lock()
 	defer ut.nicklock.Unlock()
-	ut.nicklookup[strings.ToLower(u.nick)] = &uidprot{u.id, u.isProtected()}
+	ut.nicklookup[lowernick] = &uidprot{u.id, u.isProtected()}
 }
 
 func (ut *userTools) setupRefreshUser(redisdb int64) {
@@ -107,7 +116,7 @@ func (ut *userTools) setupRefreshUser(redisdb int64) {
 				continue
 			}
 
-			user := userfromSession([]byte(msg.Message))
+			user := userfromSession([]byte(msg.Message), true)
 			namescache.refresh(user)
 			hub.refreshuser <- user.id
 		}
@@ -147,7 +156,7 @@ type User struct {
 	sync.RWMutex
 }
 
-func userfromSession(m []byte) (u *User) {
+func userfromSession(m []byte, forceupdate bool) (u *User) {
 	var su sessionUser
 	err := json.Unmarshal(m, &su)
 	if err != nil {
@@ -175,7 +184,7 @@ func userfromSession(m []byte) (u *User) {
 
 	u.setFeatures(su.Features)
 	u.assembleSimplifiedUser()
-	usertools.addUser(u)
+	usertools.addUser(u, forceupdate)
 	return
 }
 
@@ -331,7 +340,7 @@ func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
 		authdata, _ = ioutil.ReadAll(resp.Body)
 	}
 
-	user = userfromSession(authdata)
+	user = userfromSession(authdata, false)
 	if user == nil {
 		return
 	}
