@@ -7,27 +7,78 @@ import (
 	"time"
 )
 
-var db *sql.DB
-var dblock = sync.RWMutex{}
-
-func initDatabase(dbtype string, dbdsn string) {
-	dblock.Lock()
-	defer dblock.Unlock()
-
-	var err error
-	db, err = sql.Open(dbtype, dbdsn)
-	err2 := db.Ping()
-	if err != nil || err2 != nil {
-		B("Could not connect to database: ", err, err2)
-		time.Sleep(time.Second)
-		initDatabase(dbtype, dbdsn)
-	}
+type database struct {
+	db          *sql.DB
+	insertevent chan *dbInsertEvent
+	insertban   chan *dbInsertBan
+	deleteban   chan *dbDeleteBan
+	sync.Mutex
 }
 
-func insertChatEvent(userid Userid, event string, data *EventDataOut, retry bool) {
-	dblock.Lock()
+type dbInsertEvent struct {
+	uid       Userid
+	targetuid *sql.NullInt64
+	event     string
+	data      *sql.NullString
+	timestamp time.Time
+}
 
-	insertstatement, err := db.Prepare(`
+type dbInsertBan struct {
+	uid       Userid
+	targetuid Userid
+	ipaddress *sql.NullString
+	reason    string
+	starttime time.Time
+	endtime   *mysql.NullTime
+}
+
+type dbDeleteBan struct {
+	uid Userid
+}
+
+var db = &database{
+	insertevent: make(chan *dbInsertEvent, 10),
+	insertban:   make(chan *dbInsertBan, 10),
+	deleteban:   make(chan *dbDeleteBan, 10),
+}
+
+func initDatabase(dbtype string, dbdsn string) {
+	var err error
+	conn, err := sql.Open(dbtype, dbdsn)
+	if err != nil {
+		B("Could not open database: ", err)
+		time.Sleep(time.Second)
+		initDatabase(dbtype, dbdsn)
+		return
+	}
+	err = conn.Ping()
+	if err != nil {
+		B("Could not connect to database: ", err)
+		time.Sleep(time.Second)
+		initDatabase(dbtype, dbdsn)
+		return
+	}
+
+	db.db = conn
+	go db.runInsertEvent()
+	go db.runInsertBan()
+	go db.runDeleteBan()
+}
+
+func (db *database) getStatement(name string, sql string) *sql.Stmt {
+	db.Lock()
+	stmt, err := db.db.Prepare(sql)
+	db.Unlock()
+	if err != nil {
+		D("Unable to create", name, "statement:", err)
+		time.Sleep(100 * time.Millisecond)
+		return db.getStatement(name, sql)
+	}
+	return stmt
+}
+
+func (db *database) getInsertEventStatement() *sql.Stmt {
+	return db.getStatement("insertEvent", `
 		INSERT INTO chatlog
 		SET
 			userid       = ?,
@@ -36,21 +87,112 @@ func insertChatEvent(userid Userid, event string, data *EventDataOut, retry bool
 			data         = ?,
 			timestamp    = ?
 	`)
+}
 
-	if err != nil {
-		B("Unable to create insert statement: ", err)
-		dblock.Unlock()
-		if retry {
-			insertChatEvent(userid, event, data, false)
+func (db *database) getInsertBanStatement() *sql.Stmt {
+	return db.getStatement("insertBan", `
+		INSERT INTO bans
+		SET
+			userid         = ?,
+			targetuserid   = ?,
+			ipaddress      = ?,
+			reason         = ?,
+			starttimestamp = ?,
+			endtimestamp   = ?
+	`)
+}
+
+func (db *database) getDeleteBanStatement() *sql.Stmt {
+	return db.getStatement("deleteBan", `
+		UPDATE bans
+		SET endtimestamp = NOW()
+		WHERE
+			targetuserid = ? AND
+			(
+				endtimestamp IS NULL OR
+				endtimestamp > NOW()
+			)
+	`)
+}
+
+func (db *database) runInsertEvent() {
+	t := time.NewTimer(time.Minute)
+	stmt := db.getInsertEventStatement()
+	for {
+		select {
+		case <-t.C:
+			stmt.Close()
+			stmt = nil
+		case data := <-db.insertevent:
+			t.Reset(time.Minute)
+			if stmt == nil {
+				stmt = db.getInsertEventStatement()
+			}
+			_, err := stmt.Exec(data.uid, data.targetuid, data.event, data.data, data.timestamp)
+			if err != nil {
+				D("Unable to insert event", err)
+				go (func() {
+					db.insertevent <- data
+				})()
+			}
 		}
-		return
 	}
-	defer insertstatement.Close()
+}
 
-	targetuserid := &sql.NullInt64{}
+func (db *database) runInsertBan() {
+	t := time.NewTimer(time.Minute)
+	stmt := db.getInsertBanStatement()
+	for {
+		select {
+		case <-t.C:
+			stmt.Close()
+			stmt = nil
+		case data := <-db.insertban:
+			t.Reset(time.Minute)
+			if stmt == nil {
+				stmt = db.getInsertBanStatement()
+			}
+			_, err := stmt.Exec(data.uid, data.targetuid, data.ipaddress, data.reason, data.starttime, data.endtime)
+			if err != nil {
+				D("Unable to insert event", err)
+				go (func() {
+					db.insertban <- data
+				})()
+			}
+		}
+	}
+}
+
+func (db *database) runDeleteBan() {
+	t := time.NewTimer(time.Minute)
+	stmt := db.getDeleteBanStatement()
+	for {
+		select {
+		case <-t.C:
+			stmt.Close()
+			stmt = nil
+		case data := <-db.deleteban:
+			t.Reset(time.Minute)
+			if stmt == nil {
+				stmt = db.getDeleteBanStatement()
+			}
+			_, err := stmt.Exec(data.uid)
+			if err != nil {
+				D("Unable to insert event", err)
+				go (func() {
+					db.deleteban <- data
+				})()
+			}
+		}
+	}
+}
+
+func (db *database) insertChatEvent(uid Userid, event string, data *EventDataOut) {
+
+	targetuid := &sql.NullInt64{}
 	if data.Targetuserid != 0 {
-		targetuserid.Int64 = int64(data.Targetuserid)
-		targetuserid.Valid = true
+		targetuid.Int64 = int64(data.Targetuserid)
+		targetuid.Valid = true
 	}
 
 	d := &sql.NullString{}
@@ -61,39 +203,10 @@ func insertChatEvent(userid Userid, event string, data *EventDataOut, retry bool
 
 	// the timestamp is milisecond precision
 	ts := time.Unix(data.Timestamp/1000, 0).UTC()
-	_, err = insertstatement.Exec(userid, targetuserid, event, d, ts)
-	dblock.Unlock()
-	if err != nil {
-		D("Unable to insert event: ", err)
-		if retry {
-			insertChatEvent(userid, event, data, false)
-		}
-	}
+	db.insertevent <- &dbInsertEvent{uid, targetuid, event, d, ts}
 }
 
-func insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string, retry bool) {
-	dblock.Lock()
-
-	banstatement, err := db.Prepare(`
-		INSERT INTO bans
-		SET
-			userid         = ?,
-			targetuserid   = ?,
-			ipaddress      = ?,
-			reason         = ?,
-			starttimestamp = ?,
-			endtimestamp   = ?
-	`)
-
-	if err != nil {
-		B("Unable to create ban statement: ", err)
-		dblock.Unlock()
-		if retry {
-			insertBan(uid, targetuid, ban, ip, false)
-		}
-		return
-	}
-	defer banstatement.Close()
+func (db *database) insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string) {
 
 	ipaddress := &sql.NullString{}
 	if ban.BanIP && len(ip) != 0 {
@@ -108,21 +221,18 @@ func insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string, retry bool) 
 		endtimestamp.Valid = true
 	}
 
-	_, err = banstatement.Exec(uid, targetuid, ipaddress, ban.Reason, starttimestamp, endtimestamp)
-	dblock.Unlock()
-	if err != nil {
-		D("Unable to insert ban: ", err)
-		if retry {
-			insertBan(uid, targetuid, ban, ip, false)
-		}
-	}
+	db.insertban <- &dbInsertBan{uid, targetuid, ipaddress, ban.Reason, starttimestamp, endtimestamp}
 }
 
-func getBans(f func(Userid, sql.NullString, mysql.NullTime)) {
-	dblock.Lock()
-	defer dblock.Unlock()
+func (db *database) deleteBan(targetuid Userid) {
+	db.deleteban <- &dbDeleteBan{targetuid}
+}
 
-	rows, err := db.Query(`
+func (db *database) getBans(f func(Userid, sql.NullString, mysql.NullTime)) {
+	db.Lock()
+	defer db.Unlock()
+
+	rows, err := db.db.Query(`
 		SELECT
 			targetuserid,
 			ipaddress,
@@ -135,7 +245,7 @@ func getBans(f func(Userid, sql.NullString, mysql.NullTime)) {
 	`)
 
 	if err != nil {
-		B("Unable to get active bans: ", err)
+		D("Unable to get active bans: ", err)
 		return
 	}
 
@@ -147,7 +257,7 @@ func getBans(f func(Userid, sql.NullString, mysql.NullTime)) {
 		err = rows.Scan(&uid, &ipaddress, &endtimestamp)
 
 		if err != nil {
-			B("Unable to scan bans row: ", err)
+			D("Unable to scan bans row: ", err)
 			continue
 		}
 
@@ -155,73 +265,29 @@ func getBans(f func(Userid, sql.NullString, mysql.NullTime)) {
 	}
 }
 
-func deleteBan(targetuid Userid, retry bool) {
-	dblock.Lock()
+func (db *database) getUser(nick string) (Userid, bool) {
+	db.Lock()
+	defer db.Unlock()
 
-	unbanstatement, err := db.Prepare(`
-		UPDATE bans
-		SET endtimestamp = NOW()
-		WHERE
-			targetuserid = ? AND
-			(
-				endtimestamp IS NULL OR
-				endtimestamp > NOW()
-			)
-	`)
-
-	if err != nil {
-		B("Unable to create unban statement: ", err)
-		dblock.Unlock()
-		if retry {
-			deleteBan(targetuid, false)
-		}
-		return
-	}
-	defer unbanstatement.Close()
-
-	_, err = unbanstatement.Exec(targetuid)
-	dblock.Unlock()
-	if err != nil {
-		D("Unable to unban: ", err)
-		if retry {
-			deleteBan(targetuid, false)
-		}
-	}
-}
-
-func getUsers(f func(Userid, string, bool)) {
-	dblock.Lock()
-	defer dblock.Unlock()
-
-	rows, err := db.Query(`
-		SELECT DISTINCT
+	stmt := db.getStatement("getUser", `
+		SELECT
 			u.userId,
-			u.username,
 			IF(IFNULL(f.featureId, 0) >= 1, 1, 0) AS protected
 		FROM dfl_users AS u
 		LEFT JOIN dfl_users_features AS f ON (
 			f.userId = u.userId AND
 			featureId = (SELECT featureId FROM dfl_features WHERE featureName IN("protected", "admin") LIMIT 1)
 		)
+		WHERE u.username = ?
 	`)
+	defer stmt.Close()
 
+	var uid int32
+	var protected bool
+	err := stmt.QueryRow(nick).Scan(&uid, &protected)
 	if err != nil {
-		B("Unable to load userids:", err)
-		return
+		D("error looking up", nick, err)
+		return 0, false
 	}
-
-	defer rows.Close()
-	for rows.Next() {
-		var uid Userid
-		var nick string
-		var protected bool
-
-		err = rows.Scan(&uid, &nick, &protected)
-		if err != nil {
-			B("Unable to scan row: ", err)
-			continue
-		}
-
-		f(uid, nick, protected)
-	}
+	return Userid(uid), protected
 }

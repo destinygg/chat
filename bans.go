@@ -196,7 +196,7 @@ func (b *Bans) loadActive() {
 	b.ips = make(map[string]time.Time)
 	b.userips = make(map[Userid][]string)
 
-	getBans(func(uid Userid, ipaddress sql.NullString, endtimestamp mysql.NullTime) {
+	db.getBans(func(uid Userid, ipaddress sql.NullString, endtimestamp mysql.NullTime) {
 		if !endtimestamp.Valid {
 			endtimestamp.Time = getFuturetimeUTC()
 		}
@@ -215,9 +215,9 @@ func (b *Bans) loadActive() {
 }
 
 func (b *Bans) log(uid Userid, targetuid Userid, ban *BanIn, ip string) {
-	insertBan(uid, targetuid, ban, ip, true)
+	db.insertBan(uid, targetuid, ban, ip)
 }
 
 func (b *Bans) logUnban(targetuid Userid) {
-	deleteBan(targetuid, true)
+	db.deleteBan(targetuid)
 }
