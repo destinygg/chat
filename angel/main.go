@@ -92,6 +92,7 @@ again:
 		select {
 		case <-t.C:
 			go checkNames(serverurl, origin, shouldrestart)
+			go checkPing(serverurl, origin, shouldrestart)
 		case <-shouldrestart:
 			if !restarting {
 				cmd.Process.Signal(syscall.SIGQUIT)
@@ -108,6 +109,40 @@ again:
 	}
 }
 
+func checkPing(serverurl, origin string, shouldrestart chan bool) {
+	ws, err := websocket.Dial(serverurl, "", origin)
+	if err != nil {
+		P("Unable to connect to ", serverurl)
+		shouldrestart <- true
+		return
+	}
+
+	defer ws.Close()
+	buff := make([]byte, 512)
+	start := time.Now()
+
+	ws.Write([]byte(`PING "whatever"`))
+checkpingagain:
+	ws.SetReadDeadline(time.Now().Add(time.Second))
+	_, err = ws.Read(buff)
+	if err != nil {
+		P("Unable to read from the websocket ", err)
+		shouldrestart <- true
+		return
+	}
+
+	if time.Since(start) > 500*time.Millisecond {
+		P("Didnt receive PONG in 500ms, restarting")
+		shouldrestart <- true
+		return
+	}
+
+	if string(buff[:4]) != "PONG" {
+		goto checkpingagain
+	}
+
+}
+
 func checkNames(serverurl, origin string, shouldrestart chan bool) {
 	ws, err := websocket.Dial(serverurl, "", origin)
 	if err != nil {
@@ -120,7 +155,7 @@ func checkNames(serverurl, origin string, shouldrestart chan bool) {
 	buff := make([]byte, 512)
 	start := time.Now()
 
-checkagain:
+checknamesagain:
 	ws.SetReadDeadline(time.Now().Add(time.Second))
 	_, err = ws.Read(buff)
 	if err != nil {
@@ -136,7 +171,7 @@ checkagain:
 	}
 
 	if string(buff[:5]) != "NAMES" {
-		goto checkagain
+		goto checknamesagain
 	}
 
 }
