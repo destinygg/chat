@@ -116,7 +116,7 @@ func (db *database) getDeleteBanStatement() *sql.Stmt {
 }
 
 func (db *database) runInsertEvent() {
-	t := time.NewTimer(time.Minute)
+	t := time.NewTimer(5 * time.Second)
 	stmt := db.getInsertEventStatement()
 	for {
 		select {
@@ -128,7 +128,9 @@ func (db *database) runInsertEvent() {
 			if stmt == nil {
 				stmt = db.getInsertEventStatement()
 			}
+			db.Lock()
 			_, err := stmt.Exec(data.uid, data.targetuid, data.event, data.data, data.timestamp)
+			db.Unlock()
 			if err != nil {
 				D("Unable to insert event", err)
 				go (func() {
@@ -152,7 +154,9 @@ func (db *database) runInsertBan() {
 			if stmt == nil {
 				stmt = db.getInsertBanStatement()
 			}
+			db.Lock()
 			_, err := stmt.Exec(data.uid, data.targetuid, data.ipaddress, data.reason, data.starttime, data.endtime)
+			db.Unlock()
 			if err != nil {
 				D("Unable to insert event", err)
 				go (func() {
@@ -176,7 +180,9 @@ func (db *database) runDeleteBan() {
 			if stmt == nil {
 				stmt = db.getDeleteBanStatement()
 			}
+			db.Lock()
 			_, err := stmt.Exec(data.uid)
+			db.Unlock()
 			if err != nil {
 				D("Unable to insert event", err)
 				go (func() {
@@ -266,8 +272,6 @@ func (db *database) getBans(f func(Userid, sql.NullString, mysql.NullTime)) {
 }
 
 func (db *database) getUser(nick string) (Userid, bool) {
-	db.Lock()
-	defer db.Unlock()
 
 	stmt := db.getStatement("getUser", `
 		SELECT
@@ -280,6 +284,8 @@ func (db *database) getUser(nick string) (Userid, bool) {
 		)
 		WHERE u.username = ?
 	`)
+	db.Lock()
+	defer db.Unlock()
 	defer stmt.Close()
 
 	var uid int32
