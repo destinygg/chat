@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/vmihailenco/redis"
 	"time"
@@ -116,4 +117,64 @@ func getIPCacheForUser(userid Userid) []string {
 	}
 
 	return ips
+}
+
+type BroadcastMessage struct {
+	Message string
+}
+
+func initBroadcast(redisdb int64) {
+	go setupBroadcast(redisdb)
+}
+
+func setupBroadcast(redisdb int64) {
+	broadcast := getBroadcastChan(redisdb)
+
+	for {
+		select {
+		case msg := <-broadcast:
+			if msg.Err != nil {
+				D("Error receiving from redis pub/sub channel broadcast")
+				broadcast = getBroadcastChan(redisdb)
+				continue
+			}
+			if len(msg.Message) == 0 { // a spurious message, ignore
+				continue
+			}
+
+			var bc BroadcastMessage
+			err := json.Unmarshal([]byte(msg.Message), &bc)
+			if err != nil {
+				D("unable to unmarshal broadcast message", msg.Message)
+				continue
+			}
+
+			data := &EventDataOut{}
+			data.Timestamp = unixMilliTime()
+			data.Data = bc.Message
+			m, _ := Marshal(data)
+			hub.broadcast <- &message{
+				event: "BROADCAST",
+				data:  m,
+			}
+		}
+	}
+}
+
+func getBroadcastChan(redisdb int64) chan *redis.Message {
+broadcastagain:
+	c, err := rds.PubSubClient()
+	if err != nil {
+		B("Unable to create redis pubsub client: ", err)
+		time.Sleep(500 * time.Millisecond)
+		goto broadcastagain
+	}
+	broadcast, err := c.Subscribe(fmt.Sprintf("broadcast-%d", redisdb))
+	if err != nil {
+		B("Unable to subscribe to the redis broadcast channel: ", err)
+		time.Sleep(500 * time.Millisecond)
+		goto broadcastagain
+	}
+
+	return broadcast
 }

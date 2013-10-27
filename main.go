@@ -130,6 +130,7 @@ func main() {
 	initDatabase(dbtype, dbdsn)
 	initRedis(redisaddr, redisdb, redispw)
 
+	initBroadcast(redisdb)
 	initBans(redisdb)
 	initUsers(redisdb)
 

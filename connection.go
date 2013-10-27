@@ -37,7 +37,7 @@ type Connection struct {
 }
 
 type SimplifiedUser struct {
-	Nick     string    `json:"nick"`
+	Nick     string    `json:"nick,omitempty"`
 	Features *[]string `json:"features,omitempty"`
 }
 
@@ -158,6 +158,8 @@ func (c *Connection) readPumpText() {
 			c.OnPing(data)
 		case "PONG":
 			c.OnPong(data)
+		case "BROADCAST":
+			c.OnBroadcast(data)
 		}
 	}
 }
@@ -312,6 +314,36 @@ func (c *Connection) Quit() {
 			c.Broadcast("QUIT", c.getEventDataOut())
 		}
 	}
+}
+
+func (c *Connection) OnBroadcast(data []byte) {
+	m := &EventDataIn{}
+	if err := Unmarshal(data, m); err != nil {
+		c.SendError("protocolerror")
+		return
+	}
+
+	if c.user == nil {
+		c.SendError("needlogin")
+		return
+	}
+
+	if !c.user.featureGet(ISADMIN) {
+		c.SendError("nopermission")
+		return
+	}
+
+	msg := strings.TrimSpace(m.Data)
+	msglen := utf8.RuneCountInString(msg)
+	if !utf8.ValidString(msg) || msglen == 0 || msglen > 512 || invalidmessage.MatchString(msg) {
+		c.SendError("invalidmsg")
+		return
+	}
+
+	out := c.getEventDataOut()
+	out.Data = msg
+	c.Broadcast("BROADCAST", out)
+
 }
 
 func (c *Connection) OnMsg(data []byte) {
