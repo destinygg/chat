@@ -42,7 +42,7 @@ func (w *watchDog) run() {
 						F("Watchdog didn't receive anything from ", name, " in time! Restarting...")
 					}
 					wa.expectedat = now.Add(wa.duration - 500*time.Millisecond)
-					if len(wa.c) > 0 {
+					for len(wa.c) > 0 {
 						<-wa.c
 					}
 				}

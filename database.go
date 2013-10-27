@@ -285,8 +285,8 @@ func (db *database) getUser(nick string) (Userid, bool) {
 		WHERE u.username = ?
 	`)
 	db.Lock()
-	defer db.Unlock()
 	defer stmt.Close()
+	defer db.Unlock()
 
 	var uid int32
 	var protected bool
