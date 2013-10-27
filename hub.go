@@ -93,8 +93,11 @@ func (hub *Hub) run() {
 		// timeout handling
 		case t := <-pinger.C:
 			for c := range hub.connections {
-				if len(c.ping) < 2 {
+				if c.ping != nil && len(c.ping) < 2 {
 					c.ping <- t
+				} else {
+					close(c.ping)
+					c.ping = nil
 				}
 			}
 		}
