@@ -93,7 +93,6 @@ func newConnection(s *websocket.Conn, user *User) {
 
 func (c *Connection) readPumpText() {
 	defer func() {
-		close(c.ping)
 		namescache.disconnect(c.user)
 		c.Quit()
 		c.socket.Close()
@@ -174,7 +173,6 @@ func (c *Connection) writePumpText() {
 		select {
 		case t, ok := <-c.ping:
 			if !ok {
-				c.ping = nil
 				return
 			}
 			// doing it on the write goroutine because this one has a select
