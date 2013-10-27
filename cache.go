@@ -119,10 +119,6 @@ func getIPCacheForUser(userid Userid) []string {
 	return ips
 }
 
-type BroadcastMessage struct {
-	Message string
-}
-
 func initBroadcast(redisdb int64) {
 	go setupBroadcast(redisdb)
 }
@@ -142,7 +138,7 @@ func setupBroadcast(redisdb int64) {
 				continue
 			}
 
-			var bc BroadcastMessage
+			var bc EventDataIn
 			err := json.Unmarshal([]byte(msg.Message), &bc)
 			if err != nil {
 				D("unable to unmarshal broadcast message", msg.Message)
@@ -151,7 +147,7 @@ func setupBroadcast(redisdb int64) {
 
 			data := &EventDataOut{}
 			data.Timestamp = unixMilliTime()
-			data.Data = bc.Message
+			data.Data = bc.Data
 			m, _ := Marshal(data)
 			hub.broadcast <- &message{
 				event: "BROADCAST",
