@@ -95,7 +95,7 @@ func (hub *Hub) run() {
 			for c := range hub.connections {
 				if c.ping != nil && len(c.ping) < 2 {
 					c.ping <- t
-				} else {
+				} else if c.ping != nil {
 					close(c.ping)
 					c.ping = nil
 				}

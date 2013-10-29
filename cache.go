@@ -153,6 +153,7 @@ func setupBroadcast(redisdb int64) {
 				event: "BROADCAST",
 				data:  m,
 			}
+			db.insertChatEvent(Userid(0), "BROADCAST", data)
 		}
 	}
 }
