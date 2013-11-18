@@ -45,6 +45,9 @@ func (nc *namesCache) marshalNames(updateircnames bool) {
 	}
 	for _, u := range nc.users {
 		u.RLock()
+		if u.connections <= 0 {
+			continue
+		}
 		users = append(users, u.simplified)
 		if updateircnames {
 			prefix := ""
@@ -128,7 +131,8 @@ func (nc *namesCache) disconnect(user *User) {
 		if u, ok := nc.users[user.id]; ok {
 			conncount := atomic.AddInt32(&u.connections, -1)
 			if conncount <= 0 {
-				delete(nc.users, u.id)
+				// we do not delete the users so that the lastmessage is preserved for
+				// anti-spam purposes, sadly this means memory usage can only go up
 				updateircnames = true
 			}
 		}

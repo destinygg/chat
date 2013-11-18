@@ -393,8 +393,16 @@ func (c *Connection) OnMsg(data []byte) {
 		}
 		c.user.lastmessagetime = now
 
+		// strip off /me for anti-spam purposes
+		var bmsg []byte
+		if msg[:3] == "/me" {
+			bmsg = []byte(strings.TrimSpace(msg[3:]))
+		} else {
+			bmsg = []byte(msg)
+		}
+
 		hash := md5.New()
-		h := hash.Sum([]byte(msg))
+		h := hash.Sum(bmsg)
 		if bytes.Equal(h, c.user.lastmessage) {
 			c.user.delayscale++
 			c.SendError("duplicate")
