@@ -395,7 +395,7 @@ func (c *Connection) OnMsg(data []byte) {
 
 		// strip off /me for anti-spam purposes
 		var bmsg []byte
-		if msg[:3] == "/me" {
+		if len(msg) > 3 && msg[:3] == "/me" {
 			bmsg = []byte(strings.TrimSpace(msg[3:]))
 		} else {
 			bmsg = []byte(msg)
