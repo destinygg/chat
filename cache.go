@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/vmihailenco/redis"
+	redis "github.com/vmihailenco/redis/v2"
 	"time"
 )
 

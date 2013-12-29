@@ -395,20 +395,20 @@ func (c *Connection) OnMsg(data []byte) {
 
 		// strip off /me for anti-spam purposes
 		var bmsg []byte
-		if len(msg) > 3 && msg[:3] == "/me" {
-			bmsg = []byte(strings.TrimSpace(msg[3:]))
+		if len(msg) > 4 && msg[:4] == "/me " {
+			bmsg = []byte(strings.TrimSpace(msg[4:]))
 		} else {
 			bmsg = []byte(msg)
 		}
 
-		hash := md5.New()
-		h := hash.Sum(bmsg)
-		if bytes.Equal(h, c.user.lastmessage) {
+		tsum := md5.Sum(bmsg)
+		sum := tsum[:]
+		if bytes.Equal(sum, c.user.lastmessage) {
 			c.user.delayscale++
 			c.SendError("duplicate")
 			return
 		}
-		c.user.lastmessage = h
+		c.user.lastmessage = sum
 
 	}
 
@@ -558,6 +558,7 @@ func (c *Connection) OnUnban(data []byte) {
 	}
 
 	bans.unbanUserid(uid)
+	mutes.unmuteUserid(uid)
 	out := c.getEventDataOut()
 	out.Data = user.Data
 	out.Targetuserid = uid

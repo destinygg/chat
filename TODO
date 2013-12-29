@@ -3,7 +3,7 @@ more general todo, shortterm:
  ✔ persist options that are worth persisting between restarts @done (13-09-11 00:26)
  ☐ direct messages
  ☐ privileged web interface for introspecting the chat and influencing behaviour (like throttle times)
- 
+ https://code.google.com/p/gogoprotobuf/
 short-medium term:
  ☐ IRC gateway
  ☐ polling through the chat
