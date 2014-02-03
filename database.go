@@ -21,6 +21,7 @@ type dbInsertEvent struct {
 	event     string
 	data      *sql.NullString
 	timestamp time.Time
+	retries   uint8
 }
 
 type dbInsertBan struct {
@@ -30,6 +31,7 @@ type dbInsertBan struct {
 	reason    string
 	starttime time.Time
 	endtime   *mysql.NullTime
+	retries   uint8
 }
 
 type dbDeleteBan struct {
@@ -128,10 +130,14 @@ func (db *database) runInsertEvent() {
 			if stmt == nil {
 				stmt = db.getInsertEventStatement()
 			}
+			if data.retries > 2 {
+				continue
+			}
 			db.Lock()
 			_, err := stmt.Exec(data.uid, data.targetuid, data.event, data.data, data.timestamp)
 			db.Unlock()
 			if err != nil {
+				data.retries++
 				D("Unable to insert event", err)
 				go (func() {
 					db.insertevent <- data
@@ -154,10 +160,14 @@ func (db *database) runInsertBan() {
 			if stmt == nil {
 				stmt = db.getInsertBanStatement()
 			}
+			if data.retries > 2 {
+				continue
+			}
 			db.Lock()
 			_, err := stmt.Exec(data.uid, data.targetuid, data.ipaddress, data.reason, data.starttime, data.endtime)
 			db.Unlock()
 			if err != nil {
+				data.retries++
 				D("Unable to insert event", err)
 				go (func() {
 					db.insertban <- data
@@ -209,7 +219,7 @@ func (db *database) insertChatEvent(uid Userid, event string, data *EventDataOut
 
 	// the timestamp is milisecond precision
 	ts := time.Unix(data.Timestamp/1000, 0).UTC()
-	db.insertevent <- &dbInsertEvent{uid, targetuid, event, d, ts}
+	db.insertevent <- &dbInsertEvent{uid, targetuid, event, d, ts, 0}
 }
 
 func (db *database) insertBan(uid Userid, targetuid Userid, ban *BanIn, ip string) {
@@ -227,7 +237,7 @@ func (db *database) insertBan(uid Userid, targetuid Userid, ban *BanIn, ip strin
 		endtimestamp.Valid = true
 	}
 
-	db.insertban <- &dbInsertBan{uid, targetuid, ipaddress, ban.Reason, starttimestamp, endtimestamp}
+	db.insertban <- &dbInsertBan{uid, targetuid, ipaddress, ban.Reason, starttimestamp, endtimestamp, 0}
 }
 
 func (db *database) deleteBan(targetuid Userid) {

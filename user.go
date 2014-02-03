@@ -329,7 +329,7 @@ func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
 		}
 
 		resp, err := http.PostForm(authtokenurl, url.Values{"authtoken": {authtoken.Value}})
-		if resp.Body != nil {
+		if resp != nil && resp.Body != nil {
 			defer resp.Body.Close()
 		}
 

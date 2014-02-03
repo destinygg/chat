@@ -100,6 +100,9 @@ func initRedis(addr string, db int64, pw string) {
 }
 
 func cacheIPForUser(userid Userid, ip string) {
+	if ip == "127.0.0.1" {
+		return
+	}
 	key := []string{fmt.Sprintf("CHAT:userips-%d", userid)}
 	rds.EvalSha(rdsSetIPCache, key, []string{ip})
 }
