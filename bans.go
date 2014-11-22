@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/go-sql-driver/mysql"
-	redis "github.com/vmihailenco/redis/v2"
+	redis "github.com/vmihailenco/redis"
 	"strconv"
 	"sync"
 	"time"
