@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	redis "github.com/vmihailenco/redis/v2"
+	redis "github.com/vmihailenco/redis"
 	"io/ioutil"
 	"net/http"
 	"net/url"
