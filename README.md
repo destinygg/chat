@@ -59,8 +59,6 @@ If you want to use the default configuration written from main.go you'll need to
 
 will execute the compiled go code produced from the ./build script. It should complain if there are obvious problems with your setup, like a misconfigured mysql database, or no/bad redis.
 
-alternately 
-
     ./run
 
 will run a script that compiles and runs the same go code, but with an additional (-race) flag that will then:
@@ -68,4 +66,4 @@ will run a script that compiles and runs the same go code, but with an additiona
   enable data race detection.
     Supported only on linux/amd64, darwin/amd64 and windows/amd64.
 
-tl;dr : use ./chat if you're on single core, ./run if you're on multicore
+**go note: go run == go build -o /tmp/somefile && /tmp/somefile according to https://botbot.me/freenode/go-nuts/2014-11-13/?page=3
