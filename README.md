@@ -9,7 +9,7 @@ http://www.apache.org/licenses/LICENSE-2.0.html
 
 This is my first not-so-tiny Go project, so if there is anything that could be improved, please do tell.
 
-=== How to Build:
+## How to Build:
 
 `go get` each package listed in main.go
 
@@ -31,3 +31,41 @@ https://github.com/vmihailenco/redis/commit/ce34e39219f360baedf597e03f0a9c938bce
 
 this whole thing won't be an issue any more when we vendor the dependencies with something like godep
 
+## build
+
+once you've installed all the dependencies, and made that tweak to the redis library, you should be able to build the code base
+
+    ./build
+
+NOTE: the ./build procedure will create a settings.cfg file if you don't already have it.
+
+## set up redis:
+
+Install redis with the default settings from the official redis website redis.io 
+Any recent version of redis should work.
+
+## set up mysql:
+
+Install mysql according to google's "install mysql $YOUR_OPERATING_SYSTEM_HERE". 
+Any recent version of mysql-server should work.
+
+If you want to use the default configuration written from main.go you'll need to create a user called 'username' with password 'password' with access to a database called 'destinygg'
+
+**(aside: You might need to set the time_zone queryparam to 'UTC' instead of '+00:00' if you have the same issues that I (@hayksaakian) had)**
+
+# running
+
+    ./chat
+
+will execute the compiled go code produced from the ./build script. It should complain if there are obvious problems with your setup, like a misconfigured mysql database, or no/bad redis.
+
+alternately 
+
+    ./run
+
+will run a script that compiles and runs the same go code, but with an additional (-race) flag that will then:
+
+  enable data race detection.
+    Supported only on linux/amd64, darwin/amd64 and windows/amd64.
+
+tl;dr : use ./chat if you're on single core, ./run if you're on multicore
