@@ -67,9 +67,20 @@ type PingOut struct {
 	Timestamp int64 `json:"data"`
 }
 
+type NotifyIn struct {
+	Nick string `json:"nick"`
+	Data string `json:"data"`
+}
+
 type message struct {
 	event string
 	data  interface{}
+}
+
+type NotifyOut struct {
+	message
+	from   Userid
+	notify *EventDataOut
 }
 
 // Create a new connection using the specified socket and router.
@@ -143,6 +154,8 @@ func (c *Connection) readPumpText() {
 			c.OnMsg(data)
 		case "PRIVMSG":
 			c.OnPrivmsg(data)
+		case "NOTIFY":
+			c.OnNotify(data)
 		case "MUTE":
 			c.OnMute(data)
 		case "UNMUTE":
@@ -344,33 +357,22 @@ func (c *Connection) OnBroadcast(data []byte) {
 
 }
 
-func (c *Connection) OnMsg(data []byte) {
-	m := &EventDataIn{}
-	if err := Unmarshal(data, m); err != nil {
-		c.SendError("protocolerror")
-		return
-	}
+func (c *Connection) canMsg(msg string) bool {
 
-	if c.user == nil {
-		c.SendError("needlogin")
-		return
-	}
-
-	msg := strings.TrimSpace(m.Data)
 	msglen := utf8.RuneCountInString(msg)
 	if !utf8.ValidString(msg) || msglen == 0 || msglen > 512 || invalidmessage.MatchString(msg) {
 		c.SendError("invalidmsg")
-		return
+		return false
 	}
 
 	if mutes.isUserMuted(c) {
 		c.SendError("muted")
-		return
+		return false
 	}
 
 	if !hub.canUserSpeak(c) {
 		c.SendError("submode")
-		return
+		return false
 	}
 
 	if c.user != nil && !c.user.isBot() {
@@ -389,7 +391,7 @@ func (c *Connection) OnMsg(data []byte) {
 		sendtime := c.user.lastmessagetime.Add(time.Duration(c.user.delayscale) * DELAY)
 		if sendtime.After(now) {
 			c.SendError("throttled")
-			return
+			return false
 		}
 		c.user.lastmessagetime = now
 
@@ -406,15 +408,79 @@ func (c *Connection) OnMsg(data []byte) {
 		if bytes.Equal(sum, c.user.lastmessage) {
 			c.user.delayscale++
 			c.SendError("duplicate")
-			return
+			return false
 		}
 		c.user.lastmessage = sum
 
 	}
 
+	return true
+}
+
+func (c *Connection) OnMsg(data []byte) {
+	m := &EventDataIn{}
+	if err := Unmarshal(data, m); err != nil {
+		c.SendError("protocolerror")
+		return
+	}
+
+	if c.user == nil {
+		c.SendError("needlogin")
+		return
+	}
+
+	msg := strings.TrimSpace(m.Data)
+	if !c.canMsg(msg) {
+		return
+	}
+
 	out := c.getEventDataOut()
 	out.Data = msg
 	c.Broadcast("MSG", out)
+}
+
+func (c *Connection) OnNotify(data []byte) {
+	nin := &NotifyIn{}
+	if err := Unmarshal(data, nin); err != nil {
+		c.SendError("protocolerror")
+		return
+	}
+
+	if c.user == nil {
+		c.SendError("needlogin")
+		return
+	}
+
+	msg := strings.TrimSpace(nin.Data)
+	if cm := c.canMsg(msg); cm == false {
+		return
+	}
+
+	uid, _ := usertools.getUseridForNick(nin.Nick)
+	if uid == 0 {
+		c.SendError("notfound")
+		return
+	}
+
+	out := c.getEventDataOut()
+	out.Data = msg
+	out.Targetuserid = uid
+
+	event := "NOTIFY"
+
+	c.rlockUserIfExists()
+	marshalled, _ := Marshal(out)
+	c.runlockUserIfExists()
+
+	n := &NotifyOut{
+		message: message{
+			event: event,
+			data:  marshalled,
+		},
+		from:   c.user.id,
+		notify: out,
+	}
+	hub.notify <- n
 }
 
 func (c *Connection) OnPrivmsg(data []byte) {

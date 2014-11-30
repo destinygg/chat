@@ -8,6 +8,7 @@ import (
 type Hub struct {
 	connections map[*Connection]bool
 	broadcast   chan *message
+	notify      chan *NotifyOut
 	register    chan *Connection
 	unregister  chan *Connection
 	bans        chan Userid
@@ -25,6 +26,7 @@ type useridips struct {
 var hub = Hub{
 	connections: make(map[*Connection]bool),
 	broadcast:   make(chan *message, BROADCASTCHANNELSIZE),
+	notify:      make(chan *NotifyOut, BROADCASTCHANNELSIZE),
 	register:    make(chan *Connection, 256),
 	unregister:  make(chan *Connection),
 	bans:        make(chan Userid, 4),
@@ -88,6 +90,14 @@ func (hub *Hub) run() {
 			for c := range hub.connections {
 				if len(c.sendmarshalled) < SENDCHANNELSIZE {
 					c.sendmarshalled <- message
+				}
+			}
+		case n := <-hub.notify:
+			for c, _ := range hub.connections {
+				if c.user != nil && (c.user.id == n.from || c.user.id == n.notify.Targetuserid) {
+					if len(c.sendmarshalled) < SENDCHANNELSIZE {
+						c.sendmarshalled <- &n.message
+					}
 				}
 			}
 		// timeout handling
