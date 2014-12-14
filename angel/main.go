@@ -1,7 +1,7 @@
 package main
 
 import (
-	"code.google.com/p/go.net/websocket"
+	"golang.org/x/net/websocket"
 	conf "github.com/msbranco/goconfig"
 	"log"
 	"os"
@@ -95,7 +95,7 @@ again:
 			go checkPing(serverurl, origin, shouldrestart)
 		case <-shouldrestart:
 			if !restarting {
-				cmd.Process.Signal(syscall.SIGQUIT)
+				cmd.Process.Signal(syscall.SIGTERM)
 			} else {
 				P("Received from shouldrestart but already restarting, ignored")
 			}
@@ -123,7 +123,7 @@ func checkPing(serverurl, origin string, shouldrestart chan bool) {
 
 	ws.Write([]byte(`PING "whatever"`))
 checkpingagain:
-	ws.SetReadDeadline(time.Now().Add(time.Second))
+	ws.SetReadDeadline(time.Now().Add(2*time.Second))
 	_, err = ws.Read(buff)
 	if err != nil {
 		P("Unable to read from the websocket ", err)
@@ -131,8 +131,8 @@ checkpingagain:
 		return
 	}
 
-	if time.Since(start) > 500*time.Millisecond {
-		P("Didnt receive PONG in 500ms, restarting")
+	if time.Since(start) > time.Second {
+		P("Didnt receive PONG in 1s, restarting")
 		shouldrestart <- true
 		return
 	}
@@ -156,7 +156,7 @@ func checkNames(serverurl, origin string, shouldrestart chan bool) {
 	start := time.Now()
 
 checknamesagain:
-	ws.SetReadDeadline(time.Now().Add(time.Second))
+	ws.SetReadDeadline(time.Now().Add(2*time.Second))
 	_, err = ws.Read(buff)
 	if err != nil {
 		P("Unable to read from the websocket ", err)
@@ -164,8 +164,8 @@ checknamesagain:
 		return
 	}
 
-	if time.Since(start) > 500*time.Millisecond {
-		P("Didnt receive NAMES in 500ms, restarting")
+	if time.Since(start) > time.Second {
+		P("Didnt receive NAMES in 1s, restarting")
 		shouldrestart <- true
 		return
 	}
