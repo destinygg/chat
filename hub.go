@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/tideland/godm/v3/redis"
 )
 
 type Hub struct {
@@ -137,4 +140,29 @@ func (hub *Hub) toggleSubmode(enabled bool) {
 
 	state.submode = enabled
 	state.save()
+}
+
+func initBroadcast(redisdb int64) {
+	go setupBroadcast(redisdb)
+}
+
+func setupBroadcast(redisdb int64) {
+	setupRedisSubscription("broadcast", redisdb, func(result *redis.PublishedValue) {
+		var bc EventDataIn
+		err := json.Unmarshal(result.Value.Bytes(), &bc)
+		if err != nil {
+			D("unable to unmarshal broadcast message", result.Value.String())
+			return
+		}
+
+		data := &EventDataOut{}
+		data.Timestamp = unixMilliTime()
+		data.Data = bc.Data
+		m, _ := Marshal(data)
+		hub.broadcast <- &message{
+			event: "BROADCAST",
+			data:  m,
+		}
+		db.insertChatEvent(Userid(0), "BROADCAST", data)
+	})
 }

@@ -2,12 +2,11 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
-	"github.com/go-sql-driver/mysql"
-	redis "github.com/vmihailenco/redis/v2"
-	"strconv"
 	"sync"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
+	"github.com/tideland/godm/v3/redis"
 )
 
 type Bans struct {
@@ -34,80 +33,39 @@ func initBans(redisdb int64) {
 
 func (b *Bans) run(redisdb int64) {
 	b.loadActive()
-	refreshban := b.setupRefresh(redisdb)
-	unban := b.setupUnban(redisdb)
+
+	go b.runRefresh(redisdb)
+	go b.runUnban(redisdb)
+
 	t := time.NewTicker(time.Minute)
-	cp := watchdog.register("ban thread", time.Minute)
-	defer watchdog.unregister("ban thread")
 
 	for {
 		select {
 		case <-t.C:
-			cp <- true
 			b.clean()
-		case m := <-refreshban:
-			if m.Err != nil {
-				D("Error receiving from redis pub/sub channel refreshbans")
-				refreshban = b.setupRefresh(redisdb)
-			} else {
-				D("Refreshing bans")
-				b.loadActive()
-			}
-		case m := <-unban:
-			if m.Err != nil {
-				D("Error receiving from redis pub/sub channel unbanuserid")
-				unban = b.setupUnban(redisdb)
-			} else {
-				if len(m.Message) == 0 {
-					continue
-				}
-				userid, err := strconv.ParseUint(m.Message, 10, 32)
-				if err != nil {
-					D("Error parsing message as uint32:", m.Message, err)
-					continue
-				}
-				uid := Userid(userid)
-				b.unbanUserid(uid)
-				mutes.unmuteUserid(uid)
-			}
 		}
 	}
 }
 
-func (b *Bans) setupRefresh(redisdb int64) chan *redis.Message {
-refreshagain:
-	c, err := rds.PubSubClient()
-	if err != nil {
-		B("Unable to create redis pubsub client: ", err)
-		time.Sleep(500 * time.Millisecond)
-		goto refreshagain
-	}
-	refreshban, err := c.Subscribe(fmt.Sprintf("refreshbans-%d", redisdb))
-	if err != nil {
-		B("Unable to subscribe to the redis refreshbans channel: ", err)
-		time.Sleep(500 * time.Millisecond)
-		goto refreshagain
-	}
-
-	return refreshban
+func (b *Bans) runRefresh(redisdb int64) {
+	setupRedisSubscription("refreshbans", redisdb, func(result *redis.PublishedValue) {
+		D("Refreshing bans")
+		b.loadActive()
+	})
 }
 
-func (b *Bans) setupUnban(redisdb int64) chan *redis.Message {
-unbanagain:
-	c, err := rds.PubSubClient()
-	if err != nil {
-		B("Unable to create redis pubsub client: ", err)
-		time.Sleep(500 * time.Millisecond)
-		goto unbanagain
-	}
-	unban, err := c.Subscribe(fmt.Sprintf("unbanuserid-%d", redisdb))
-	if err != nil {
-		B("Unable to subscribe to the redis unbanuserid channel: ", err)
-		time.Sleep(500 * time.Millisecond)
-		goto unbanagain
-	}
+func (b *Bans) runUnban(redisdb int64) {
+	setupRedisSubscription("unbanuserid", redisdb, func(result *redis.PublishedValue) {
+		userid, err := result.Value.Uint64()
+		if err != nil {
+			D("Error parsing message as uint64:", userid, err)
+			return
+		}
 
-	return unban
+		uid := Userid(userid)
+		b.unbanUserid(uid)
+		mutes.unmuteUserid(uid)
+	})
 }
 
 func (b *Bans) clean() {

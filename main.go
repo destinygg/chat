@@ -7,18 +7,19 @@ package main
 
 import (
 	"bytes"
-	"code.google.com/p/go.net/websocket"
 	"encoding/gob"
 	_ "expvar"
 	"fmt"
-	"github.com/davecheney/profile"
-	conf "github.com/msbranco/goconfig"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"runtime"
 	"sync"
 	"time"
+
+	_ "github.com/mkevac/debugcharts"
+	conf "github.com/msbranco/goconfig"
+	"golang.org/x/net/websocket"
 )
 
 type State struct {
@@ -111,24 +112,14 @@ func main() {
 		}
 	})()
 
-	if debuggingenabled {
-		defer profile.Start(&profile.Config{
-			Quiet:          false,
-			CPUProfile:     true,
-			MemProfile:     true,
-			BlockProfile:   true,
-			ProfilePath:    "./",
-			NoShutdownHook: false,
-		}).Stop()
-	}
-
 	state.load()
+
+	initRedis(redisaddr, redisdb, redispw)
 
 	initWatchdog()
 	initNamesCache()
 	initHub()
 	initDatabase(dbtype, dbdsn)
-	initRedis(redisaddr, redisdb, redispw)
 
 	initBroadcast(redisdb)
 	initBans(redisdb)

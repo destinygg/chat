@@ -1,23 +1,49 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	redis "github.com/vmihailenco/redis/v2"
 	"time"
+
+	"github.com/tideland/godm/v3/redis"
 )
 
 var (
-	rds               *redis.Client
+	rds               *redis.Database
 	rdsCircularBuffer string
 	rdsGetIPCache     string
 	rdsSetIPCache     string
 )
 
-func initRedis(addr string, db int64, pw string) {
-	rds = redis.NewTCPClient(addr, pw, db)
+func redisGetConn() *redis.Connection {
+again:
+	conn, err := rds.Connection()
+	if err != nil {
+		D("Error getting a redis connection", err)
+		if conn != nil {
+			conn.Return()
+		}
+		time.Sleep(500 * time.Millisecond)
+		goto again
+	}
 
-	ret := rds.ScriptLoad(`
+	return conn
+}
+
+func initRedis(addr string, db int64, pw string) {
+	var err error
+	rds, err = redis.Open(
+		redis.TcpConnection(addr, 1*time.Second),
+		redis.Index(int(db), pw),
+		redis.PoolSize(50),
+	)
+	if err != nil {
+		F("Error making the redis pool", err)
+	}
+
+	conn := redisGetConn()
+	defer conn.Return()
+
+	rdsCircularBuffer, err = conn.DoString("SCRIPT LOAD", `
 		local key, value, maxlength = KEYS[1], ARGV[1], tonumber(ARGV[2])
 		if not maxlength then
 			return {err = "INVALID ARGUMENTS"}
@@ -31,15 +57,19 @@ func initRedis(addr string, db int64, pw string) {
 			redis.call("LTRIM", key, start, maxlength)
 		end
 	`)
-	rdsCircularBuffer = ret.Val()
+	if err != nil {
+		F("Circular buffer script loading error", err)
+	}
 
-	ret = rds.ScriptLoad(`
+	rdsGetIPCache, err = conn.DoString("SCRIPT LOAD", `
 		local key = KEYS[1]
 		return redis.call("ZRANGEBYSCORE", key, 1, 3)
 	`)
-	rdsGetIPCache = ret.Val()
+	if err != nil {
+		F("Get IP Cache script loading error", err)
+	}
 
-	ret = rds.ScriptLoad(`
+	rdsSetIPCache, err = conn.DoString("SCRIPT LOAD", `
 		local key, value, maxlength = KEYS[1], ARGV[1], 3
 		
 		local count = redis.call("ZCOUNT", key, 1, maxlength)
@@ -75,106 +105,89 @@ func initRedis(addr string, db int64, pw string) {
 			return redis.call("ZADD", key, count + 1, value)
 		end
 	`)
-	rdsSetIPCache = ret.Val()
-
-	go (func() {
-		t := time.NewTicker(time.Minute)
-		cp := watchdog.register("redis check thread", time.Minute)
-		defer watchdog.unregister("redis check thread")
-
-		for {
-			select {
-			case <-t.C:
-				cp <- true
-				ping := rds.Ping()
-				if ping.Err() != nil || ping.Val() != "PONG" {
-					D("Could not ping redis: ", ping.Err())
-					rds.Close()
-					initRedis(addr, db, pw)
-					return
-				}
-			}
-		}
-	})()
-
+	if err != nil {
+		F("Set IP Cache script loading error", err)
+	}
 }
 
 func cacheIPForUser(userid Userid, ip string) {
 	if ip == "127.0.0.1" {
 		return
 	}
-	key := []string{fmt.Sprintf("CHAT:userips-%d", userid)}
-	rds.EvalSha(rdsSetIPCache, key, []string{ip})
+
+	conn := redisGetConn()
+	defer conn.Return()
+
+	_, err := conn.Do("EVALSHA", rdsSetIPCache, fmt.Sprintf("CHAT:userips-%d", userid))
+	if err != nil {
+		D("cacheIPForUser redis error", err)
+	}
 }
 
 func getIPCacheForUser(userid Userid) []string {
-	key := []string{fmt.Sprintf("CHAT:userips-%d", userid)}
-	res := rds.EvalSha(rdsGetIPCache, key, []string{})
-	if res.Err() != nil {
-		return []string{}
-	}
+	conn := redisGetConn()
+	defer conn.Return()
 
-	ips := make([]string, 0)
-	for _, v := range res.Val().([]interface{}) {
-		ips = append(ips, v.(string))
+	ips, err := conn.DoStrings("EVALSHA", rdsGetIPCache, fmt.Sprintf("CHAT:userips-%d", userid))
+	if err != nil {
+		D("getIPCacheForUser redis error", err)
 	}
 
 	return ips
 }
 
-func initBroadcast(redisdb int64) {
-	go setupBroadcast(redisdb)
+func isSubErr(sub *redis.Subscription, err error) bool {
+	if err != nil {
+		D("Getting a subscription failed with error", err)
+		if sub != nil {
+			sub.Close()
+		}
+		time.Sleep(500 * time.Millisecond)
+		return true
+	}
+	return false
 }
 
-func setupBroadcast(redisdb int64) {
-	broadcast := getBroadcastChan(redisdb)
+func setupRedisSubscription(channel string, redisdb int64, cb func(*redis.PublishedValue)) {
+again:
+	sub, err := rds.Subscription()
+	if isSubErr(sub, err) {
+		goto again
+	}
+
+	err = sub.Subscribe(fmt.Sprintf("%s-%d", channel, redisdb))
+	if isSubErr(sub, err) {
+		goto again
+	}
 
 	for {
-		select {
-		case msg := <-broadcast:
-			if msg.Err != nil {
-				D("Error receiving from redis pub/sub channel broadcast")
-				broadcast = getBroadcastChan(redisdb)
-				continue
-			}
-			if len(msg.Message) == 0 { // a spurious message, ignore
-				continue
-			}
-
-			var bc EventDataIn
-			err := json.Unmarshal([]byte(msg.Message), &bc)
-			if err != nil {
-				D("unable to unmarshal broadcast message", msg.Message)
-				continue
-			}
-
-			data := &EventDataOut{}
-			data.Timestamp = unixMilliTime()
-			data.Data = bc.Data
-			m, _ := Marshal(data)
-			hub.broadcast <- &message{
-				event: "BROADCAST",
-				data:  m,
-			}
-			db.insertChatEvent(Userid(0), "BROADCAST", data)
+		result, err := sub.Pop()
+		if isSubErr(sub, err) {
+			goto again
 		}
+
+		if result.Value.IsNil() {
+			continue
+		}
+
+		D(result)
+		cb(result)
 	}
 }
 
-func getBroadcastChan(redisdb int64) chan *redis.Message {
-broadcastagain:
-	c, err := rds.PubSubClient()
+func redisGetBytes(key string) ([]byte, error) {
+	conn := redisGetConn()
+	defer conn.Return()
+
+	result, err := conn.Do("GET", key)
 	if err != nil {
-		B("Unable to create redis pubsub client: ", err)
-		time.Sleep(500 * time.Millisecond)
-		goto broadcastagain
-	}
-	broadcast, err := c.Subscribe(fmt.Sprintf("broadcast-%d", redisdb))
-	if err != nil {
-		B("Unable to subscribe to the redis broadcast channel: ", err)
-		time.Sleep(500 * time.Millisecond)
-		goto broadcastagain
+		return []byte{}, err
 	}
 
-	return broadcast
+	value, err := result.ValueAt(0)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return value.Bytes(), err
 }

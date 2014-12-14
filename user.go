@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	redis "github.com/vmihailenco/redis/v2"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tideland/godm/v3/redis"
 )
 
 type userTools struct {
@@ -22,7 +23,7 @@ type userTools struct {
 }
 
 var (
-	cookievalid = regexp.MustCompile("^[a-z0-9]{32}$")
+	cookievalid = regexp.MustCompile("^[a-z0-9]+$")
 	usertools   = userTools{
 		nicklookup:  make(map[string]*uidprot),
 		nicklock:    sync.RWMutex{},
@@ -59,7 +60,7 @@ type sessionUser struct {
 }
 
 func initUsers(redisdb int64) {
-	go usertools.setupRefreshUser(redisdb)
+	go runRefreshUser(redisdb)
 }
 
 func (ut *userTools) getUseridForNick(nick string) (Userid, bool) {
@@ -96,49 +97,12 @@ func (ut *userTools) addUser(u *User, force bool) {
 	ut.nicklookup[lowernick] = &uidprot{u.id, u.isProtected()}
 }
 
-func (ut *userTools) setupRefreshUser(redisdb int64) {
-	refreshuser := ut.getRefreshUserChan(redisdb)
-	t := time.NewTicker(time.Minute)
-	cp := watchdog.register("refreshuser thread", time.Minute)
-	defer watchdog.unregister("refreshuser thread")
-
-	for {
-		select {
-		case <-t.C:
-			cp <- true // send heartbeat
-		case msg := <-refreshuser:
-			if msg.Err != nil {
-				D("Error receiving from redis pub/sub channel refreshuser")
-				refreshuser = ut.getRefreshUserChan(redisdb)
-				continue
-			}
-			if len(msg.Message) == 0 { // a spurious message, ignore
-				continue
-			}
-
-			user := userfromSession([]byte(msg.Message), true)
-			namescache.refresh(user)
-			hub.refreshuser <- user.id
-		}
-	}
-}
-
-func (ut *userTools) getRefreshUserChan(redisdb int64) chan *redis.Message {
-refreshuseragain:
-	c, err := rds.PubSubClient()
-	if err != nil {
-		B("Unable to create redis pubsub client: ", err)
-		time.Sleep(500 * time.Millisecond)
-		goto refreshuseragain
-	}
-	refreshuser, err := c.Subscribe(fmt.Sprintf("refreshuser-%d", redisdb))
-	if err != nil {
-		B("Unable to subscribe to the redis refreshuser channel: ", err)
-		time.Sleep(500 * time.Millisecond)
-		goto refreshuseragain
-	}
-
-	return refreshuser
+func runRefreshUser(redisdb int64) {
+	setupRedisSubscription("refreshuser", redisdb, func(result *redis.PublishedValue) {
+		user := userfromSession(result.Value.Bytes(), true)
+		namescache.refresh(user)
+		hub.refreshuser <- user.id
+	})
 }
 
 // ----------
@@ -316,11 +280,10 @@ func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
 			return
 		}
 
-		sess := rds.Get(fmt.Sprintf("CHAT:session-%v", sessionid.Value))
-		if sess.Err() != nil {
+		authdata, err = redisGetBytes(fmt.Sprintf("CHAT:session-%v", sessionid.Value))
+		if err != nil {
 			return
 		}
-		authdata = []byte(sess.Val())
 	} else {
 		// try authtoken auth
 		authtoken, err := r.Cookie("authtoken")
