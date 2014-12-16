@@ -3,13 +3,14 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
-	"golang.org/x/net/websocket"
 	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/gorilla/websocket"
 )
 
 // regexp to detect three or more consecutive characters intended to be combined
@@ -32,7 +33,6 @@ type Connection struct {
 	banned         chan bool
 	stop           chan bool
 	user           *User
-	lastactive     time.Time
 	ping           chan time.Time
 	sync.RWMutex
 }
@@ -74,8 +74,9 @@ type NotifyIn struct {
 }
 
 type message struct {
-	event string
-	data  interface{}
+	msgtyp int
+	event  string
+	data   interface{}
 }
 
 type NotifyOut struct {
@@ -94,7 +95,6 @@ func newConnection(s *websocket.Conn, user *User) {
 		banned:         make(chan bool, 8),
 		stop:           make(chan bool),
 		user:           user,
-		lastactive:     time.Now(),
 		ping:           make(chan time.Time, 2),
 		RWMutex:        sync.RWMutex{},
 	}
@@ -109,6 +109,21 @@ func (c *Connection) readPumpText() {
 		c.Quit()
 		c.socket.Close()
 	}()
+
+	c.socket.SetReadLimit(MAXMESSAGESIZE)
+	c.socket.SetReadDeadline(time.Now().Add(READTIMEOUT))
+	c.socket.SetPongHandler(func(string) error {
+		c.socket.SetReadDeadline(time.Now().Add(PINGTIMEOUT))
+		return nil
+	})
+	c.socket.SetPingHandler(func(string) error {
+		c.sendmarshalled <- &message{
+			msgtyp: websocket.PongMessage,
+			event:  "PONG",
+			data:   []byte{},
+		}
+		return nil
+	})
 
 	if c.user != nil {
 		c.rlockUserIfExists()
@@ -128,27 +143,18 @@ func (c *Connection) readPumpText() {
 	c.Names()
 	c.Join() // broadcast to the chat that a user has connected
 
-	message := make([]byte, MAXMESSAGESIZE)
 	for {
-		// need to rearm the deadline on every read, or else the lib disconnects us
-		// same thing for the writeDeadline
-		c.socket.SetReadDeadline(time.Now().Add(READTIMEOUT))
-		n, err := c.socket.Read(message)
-		if err != nil {
-			break
+		msgtype, message, err := c.socket.ReadMessage()
+		if err != nil || msgtype == websocket.BinaryMessage {
+			return
 		}
 
-		name, data, err := Unpack(string(message[:n]))
+		name, data, err := Unpack(string(message))
 		if err != nil {
 			// invalid protocol message from the client, just ignore it,
 			// disconnect the user
 			return
 		}
-
-		// update for timeout, need lock because we check it in the write goroutine
-		c.Lock()
-		c.lastactive = time.Now()
-		c.Unlock()
 
 		// dispatch
 		switch name {
@@ -178,6 +184,11 @@ func (c *Connection) readPumpText() {
 	}
 }
 
+func (c *Connection) write(mt int, payload []byte) error {
+	c.socket.SetWriteDeadline(time.Now().Add(WRITETIMEOUT))
+	return c.socket.WriteMessage(mt, payload)
+}
+
 func (c *Connection) writePumpText() {
 	defer func() {
 		hub.unregister <- c
@@ -186,22 +197,17 @@ func (c *Connection) writePumpText() {
 
 	for {
 		select {
-		case t, ok := <-c.ping:
+		case _, ok := <-c.ping:
 			if !ok {
 				return
 			}
-			// doing it on the write goroutine because this one has a select
-			c.RLock()
-			interval := t.Sub(c.lastactive)
-			c.RUnlock()
-			if interval > PINGINTERVAL && interval < PINGTIMEOUT {
-				c.Ping()
-			} else if interval > PINGTIMEOUT {
-				// disconnect user, stop goroutines
+			m, _ := time.Now().MarshalBinary()
+			if err := c.write(websocket.PingMessage, m); err != nil {
 				return
 			}
 		case <-c.banned:
-			websocket.Message.Send(c.socket, `ERR "banned"`)
+			c.write(websocket.TextMessage, []byte(`ERR "banned"`))
+			c.write(websocket.CloseMessage, []byte{})
 			return
 		case <-c.stop:
 			return
@@ -210,7 +216,7 @@ func (c *Connection) writePumpText() {
 			if data, err := Marshal(m.data); err == nil {
 				c.runlockUserIfExists()
 				if data, err := Pack(m.event, data); err == nil {
-					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
+					if err := c.write(websocket.TextMessage, data); err != nil {
 						return
 					}
 				}
@@ -222,7 +228,11 @@ func (c *Connection) writePumpText() {
 			if data, err := Marshal(m.data); err == nil {
 				c.runlockUserIfExists()
 				if data, err := Pack(m.event, data); err == nil {
-					if err := websocket.Message.Send(c.socket, string(data)); err != nil {
+					typ := m.msgtyp
+					if typ == 0 {
+						typ = websocket.TextMessage
+					}
+					if err := c.write(typ, data); err != nil {
 						return
 					}
 				}
@@ -232,7 +242,11 @@ func (c *Connection) writePumpText() {
 		case message := <-c.sendmarshalled:
 			data := message.data.([]byte)
 			if data, err := Pack(message.event, data); err == nil {
-				if err := websocket.Message.Send(c.socket, string(data)); err != nil {
+				typ := message.msgtyp
+				if typ == 0 {
+					typ = websocket.TextMessage
+				}
+				if err := c.write(typ, data); err != nil {
 					return
 				}
 			}
@@ -498,8 +512,8 @@ func (c *Connection) OnPrivmsg(data []byte) {
 
 func (c *Connection) Names() {
 	c.sendmarshalled <- &message{
-		"NAMES",
-		namescache.getNames(),
+		event: "NAMES",
+		data:  namescache.getNames(),
 	}
 }
 

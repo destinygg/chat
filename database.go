@@ -2,9 +2,10 @@ package main
 
 import (
 	"database/sql"
-	"github.com/go-sql-driver/mysql"
 	"sync"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 type database struct {

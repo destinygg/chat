@@ -71,7 +71,7 @@ func (hub *Hub) run() {
 			}
 		case stringip := <-hub.ipbans:
 			for c := range hub.connections {
-				addr := c.socket.Request().RemoteAddr
+				addr := c.socket.UnderlyingConn().RemoteAddr().String()
 				pos := strings.LastIndex(addr, ":")
 				ip := addr[:pos]
 				if ip == stringip {
@@ -82,7 +82,7 @@ func (hub *Hub) run() {
 			ips := make([]string, 0, 3)
 			for c, _ := range hub.connections {
 				if c.user != nil && c.user.id == d.userid {
-					addr := c.socket.Request().RemoteAddr
+					addr := c.socket.UnderlyingConn().RemoteAddr().String()
 					pos := strings.LastIndex(addr, ":")
 					ip := addr[:pos]
 					ips = append(ips, ip)

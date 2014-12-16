@@ -113,7 +113,6 @@ type User struct {
 	features        uint32
 	lastmessage     []byte
 	lastmessagetime time.Time
-	lastactive      time.Time
 	delayscale      uint8
 	simplified      *SimplifiedUser
 	connections     int32
@@ -139,7 +138,6 @@ func userfromSession(m []byte, forceupdate bool) (u *User) {
 		features:        0,
 		lastmessage:     nil,
 		lastmessagetime: time.Time{},
-		lastactive:      time.Time{},
 		delayscale:      1,
 		simplified:      nil,
 		connections:     0,

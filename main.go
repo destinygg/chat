@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	_ "github.com/mkevac/debugcharts"
 	conf "github.com/msbranco/goconfig"
-	"golang.org/x/net/websocket"
 )
 
 type State struct {
@@ -33,6 +33,12 @@ var (
 		mutes: make(map[Userid]time.Time),
 	}
 )
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
+}
 
 const (
 	WRITETIMEOUT         = 10 * time.Second
@@ -125,25 +131,33 @@ func main() {
 	initBans(redisdb)
 	initUsers(redisdb)
 
-	http.Handle("/ws", websocket.Handler(Handler))
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			D("Websocket upgrade failed", err, r)
+			return
+		}
+
+		user, banned := getUserFromWebRequest(r)
+
+		if banned {
+			ws.SetWriteDeadline(time.Now().Add(WRITETIMEOUT))
+			ws.WriteMessage(websocket.TextMessage, []byte(`ERR "banned"`))
+			return
+		}
+
+		newConnection(ws, user)
+	})
 
 	fmt.Printf("Using %v threads, and listening on: %v\n", processes, addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
-}
-
-func Handler(socket *websocket.Conn) {
-	defer socket.Close()
-	r := socket.Request()
-	user, banned := getUserFromWebRequest(r)
-
-	if banned {
-		websocket.Message.Send(socket, `ERR "banned"`)
-		return
-	}
-
-	newConnection(socket, user)
 }
 
 func unixMilliTime() int64 {

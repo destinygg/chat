@@ -170,7 +170,6 @@ again:
 			continue
 		}
 
-		D(result)
 		cb(result)
 	}
 }
