@@ -1,2 +1,2 @@
 #!/bin/bash
-go build -o $1 angel main.go debug.go
+go build $1 -o angel main.go debug.go

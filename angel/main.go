@@ -1,19 +1,36 @@
 package main
 
 import (
-	"golang.org/x/net/websocket"
-	conf "github.com/msbranco/goconfig"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"github.com/gorilla/websocket"
+	conf "github.com/msbranco/goconfig"
 )
 
 var debuggingenabled bool
+var (
+	dialer = websocket.Dialer{
+		HandshakeTimeout: 5 * time.Second,
+	}
+	headers = http.Header{
+		"Origin": []string{"http://localhost"},
+	}
+)
+
+var (
+	mu           = sync.Mutex{}
+	pingrunning  = false
+	namesrunning = false
+)
 
 func main() {
 	c, err := conf.ReadConfigFile("angel.cfg")
@@ -37,6 +54,7 @@ func main() {
 	serverurl, _ := c.GetString("default", "serverurl")
 	origin, _ := c.GetString("default", "origin")
 	initLog()
+	headers.Set("Origin", origin)
 
 	base := path.Base(binpath)
 	basedir := strings.TrimSuffix(binpath, "/"+base)
@@ -44,7 +62,7 @@ func main() {
 
 	shouldrestart := make(chan bool)
 	processexited := make(chan bool)
-	t := time.NewTicker(2 * time.Second)
+	t := time.NewTicker(10 * time.Second)
 	sct := make(chan os.Signal, 1)
 	signal.Notify(sct, syscall.SIGTERM)
 
@@ -58,6 +76,7 @@ func main() {
 	var restarting bool
 
 again:
+	restarting = true
 	initLogWriter()
 	cmd := exec.Command(binpath)
 	stdout, err := cmd.StdoutPipe()
@@ -85,14 +104,16 @@ again:
 		processexited <- true
 	})()
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(10 * time.Second)
 	restarting = false
 
 	for {
 		select {
 		case <-t.C:
-			go checkNames(serverurl, origin, shouldrestart)
-			go checkPing(serverurl, origin, shouldrestart)
+			if !restarting {
+				go checkNames(serverurl, shouldrestart)
+				go checkPing(serverurl, shouldrestart)
+			}
 		case <-shouldrestart:
 			if !restarting {
 				cmd.Process.Signal(syscall.SIGTERM)
@@ -109,8 +130,22 @@ again:
 	}
 }
 
-func checkPing(serverurl, origin string, shouldrestart chan bool) {
-	ws, err := websocket.Dial(serverurl, "", origin)
+func checkPing(serverurl string, shouldrestart chan bool) {
+	mu.Lock()
+	if pingrunning {
+		mu.Unlock()
+		return
+	}
+	pingrunning = true
+	mu.Unlock()
+	defer (func() {
+		mu.Lock()
+		pingrunning = false
+		mu.Unlock()
+	})()
+
+	var pongreceived bool
+	ws, _, err := dialer.Dial(serverurl, headers)
 	if err != nil {
 		P("Unable to connect to ", serverurl)
 		shouldrestart <- true
@@ -118,60 +153,88 @@ func checkPing(serverurl, origin string, shouldrestart chan bool) {
 	}
 
 	defer ws.Close()
-	buff := make([]byte, 512)
 	start := time.Now()
 
-	ws.Write([]byte(`PING "whatever"`))
+	ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+	ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	ws.SetPingHandler(func(m string) error {
+		return ws.WriteMessage(websocket.PongMessage, []byte(m))
+	})
+	ws.SetPongHandler(func(m string) error {
+		ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+		pongreceived = true
+		return nil
+	})
+	ws.WriteMessage(websocket.PingMessage, []byte{})
+
 checkpingagain:
-	ws.SetReadDeadline(time.Now().Add(2*time.Second))
-	_, err = ws.Read(buff)
-	if err != nil {
-		P("Unable to read from the websocket ", err)
+	_, _, err = ws.ReadMessage()
+	if !pongreceived && err != nil {
+		B("Unable to read from the websocket ", err)
 		shouldrestart <- true
 		return
 	}
 
-	if time.Since(start) > time.Second {
-		P("Didnt receive PONG in 1s, restarting")
+	if !pongreceived && time.Since(start) > 5*time.Second {
+		P("Didnt receive PONG in 5s, restarting")
 		shouldrestart <- true
 		return
 	}
 
-	if string(buff[:4]) != "PONG" {
+	if !pongreceived {
 		goto checkpingagain
 	}
 
+	D("PING check OK")
 }
 
-func checkNames(serverurl, origin string, shouldrestart chan bool) {
-	ws, err := websocket.Dial(serverurl, "", origin)
+func checkNames(serverurl string, shouldrestart chan bool) {
+	mu.Lock()
+	if namesrunning {
+		mu.Unlock()
+		return
+	}
+	namesrunning = true
+	mu.Unlock()
+	defer (func() {
+		mu.Lock()
+		namesrunning = false
+		mu.Unlock()
+	})()
+
+	ws, _, err := dialer.Dial(serverurl, headers)
 	if err != nil {
 		P("Unable to connect to ", serverurl)
 		shouldrestart <- true
 		return
 	}
 
+	ws.SetReadDeadline(time.Now().Add(10 * time.Second))
+	ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	ws.SetPingHandler(func(m string) error {
+		return ws.WriteMessage(websocket.PongMessage, []byte(m))
+	})
+
 	defer ws.Close()
-	buff := make([]byte, 512)
 	start := time.Now()
 
 checknamesagain:
-	ws.SetReadDeadline(time.Now().Add(2*time.Second))
-	_, err = ws.Read(buff)
+	msgtype, message, err := ws.ReadMessage()
 	if err != nil {
-		P("Unable to read from the websocket ", err)
+		B("Unable to read from the websocket ", err)
 		shouldrestart <- true
 		return
 	}
 
-	if time.Since(start) > time.Second {
-		P("Didnt receive NAMES in 1s, restarting")
+	if time.Since(start) > 5*time.Second {
+		P("Didnt receive NAMES in 5s, restarting")
 		shouldrestart <- true
 		return
 	}
 
-	if string(buff[:5]) != "NAMES" {
+	if msgtype != websocket.TextMessage || string(message[:5]) != "NAMES" {
 		goto checknamesagain
 	}
 
+	D("NAMES check OK")
 }
