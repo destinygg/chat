@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	//"github.com/emicklei/hopwatch"
+	"bytes"
 	"log"
 	"runtime"
 	"time"
@@ -18,11 +19,20 @@ type ErrorTrace struct {
 
 func NewErrorTrace(v ...interface{}) error {
 	msg := fmt.Sprint(v...)
-	pc, file, line, ok := runtime.Caller(2)
-	if ok {
+	buf := bytes.Buffer{}
+	skip := 2
+addtrace:
+	pc, file, line, ok := runtime.Caller(skip)
+	if ok && skip < 6 { // print a max of 6 lines of trace
 		fun := runtime.FuncForPC(pc)
-		loc := fmt.Sprint(fun.Name(), "\n\t", file, ":", line)
-		return ErrorTrace{err: errors.New(msg), trace: loc}
+		buf.WriteString(fmt.Sprint(fun.Name(), " -- ", file, ":", line, "\n"))
+		skip++
+		goto addtrace
+	}
+
+	if buf.Len() > 0 {
+		trace := buf.String()
+		return ErrorTrace{err: errors.New(msg), trace: trace}
 	}
 	return errors.New("error generating error")
 }

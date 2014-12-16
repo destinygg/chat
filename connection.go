@@ -2,11 +2,12 @@ package main
 
 import (
 	"bytes"
-	"golang.org/x/net/websocket"
 	"crypto/md5"
+	"golang.org/x/net/websocket"
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -111,7 +112,8 @@ func (c *Connection) readPumpText() {
 
 	if c.user != nil {
 		c.rlockUserIfExists()
-		if c.user.connections > 5 {
+		n := atomic.LoadInt32(&c.user.connections)
+		if n > 5 {
 			c.runlockUserIfExists()
 			c.SendError("toomanyconnections")
 			c.stop <- true
@@ -311,7 +313,8 @@ func (c *Connection) Join() {
 	if c.user != nil {
 		c.rlockUserIfExists()
 		defer c.runlockUserIfExists()
-		if c.user.connections == 1 {
+		n := atomic.LoadInt32(&c.user.connections)
+		if n == 1 {
 			c.Broadcast("JOIN", c.getEventDataOut())
 		}
 	}
@@ -321,7 +324,8 @@ func (c *Connection) Quit() {
 	if c.user != nil {
 		c.rlockUserIfExists()
 		defer c.runlockUserIfExists()
-		if c.user.connections <= 0 {
+		n := atomic.LoadInt32(&c.user.connections)
+		if n <= 0 {
 			c.Broadcast("QUIT", c.getEventDataOut())
 		}
 	}

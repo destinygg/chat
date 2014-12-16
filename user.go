@@ -124,7 +124,7 @@ func userfromSession(m []byte, forceupdate bool) (u *User) {
 	var su sessionUser
 	err := json.Unmarshal(m, &su)
 	if err != nil {
-		D("Unable to unmarshal sessionuser string: ", string(m))
+		B("Unable to unmarshal sessionuser string: ", string(m))
 		return
 	}
 
@@ -281,7 +281,7 @@ func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
 		}
 
 		authdata, err = redisGetBytes(fmt.Sprintf("CHAT:session-%v", sessionid.Value))
-		if err != nil {
+		if err != nil || len(authdata) == 0 {
 			return
 		}
 	} else {

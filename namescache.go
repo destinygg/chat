@@ -45,7 +45,8 @@ func (nc *namesCache) marshalNames(updateircnames bool) {
 	}
 	for _, u := range nc.users {
 		u.RLock()
-		if u.connections <= 0 {
+		n := atomic.LoadInt32(&u.connections)
+		if n <= 0 {
 			continue
 		}
 		users = append(users, u.simplified)
@@ -109,7 +110,7 @@ func (nc *namesCache) add(user *User) *User {
 		atomic.AddInt32(&u.connections, 1)
 	} else {
 		updateircnames = true
-		user.connections++
+		atomic.AddInt32(&user.connections, 1)
 		su := &SimplifiedUser{
 			Nick:     user.nick,
 			Features: user.simplified.Features,
