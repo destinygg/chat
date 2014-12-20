@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -172,14 +173,26 @@ func setupPrivmsg(redisdb int64) {
 	setupRedisSubscription("privmsg", redisdb, func(result *redis.PublishedValue) {
 		var d struct {
 			Username     string
-			Targetuserid Userid
+			Targetuserid string
 			Message      string
-			Messageid    int64
+			Messageid    string
 		}
 
 		err := json.Unmarshal(result.Value.Bytes(), &d)
 		if err != nil {
-			D("unable to unmarshal broadcast message", result.Value.String())
+			D("unable to unmarshal private message", result.Value.String())
+			return
+		}
+
+		mid, err := strconv.ParseInt(d.Messageid, 10, 64)
+		if err != nil {
+			D("Unable to parse messageid into number", d.Messageid)
+			return
+		}
+
+		uid, err := strconv.ParseInt(d.Targetuserid, 10, 64)
+		if err != nil {
+			D("Unable to parse targetuserid into number", d.Targetuserid)
 			return
 		}
 
@@ -188,9 +201,9 @@ func setupPrivmsg(redisdb int64) {
 				event: "PRIVMSG",
 			},
 			Nick:      d.Username,
-			targetuid: d.Targetuserid,
+			targetuid: Userid(uid),
 			Data:      d.Message,
-			Messageid: d.Messageid,
+			Messageid: mid,
 			Timestamp: unixMilliTime(),
 		}
 

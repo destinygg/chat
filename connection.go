@@ -479,14 +479,14 @@ func (c *Connection) OnPrivmsg(data []byte) {
 	}
 
 	uid, _ := usertools.getUseridForNick(p.Nick)
-	//if uid == 0 || uid == c.user.id {
-	if uid == 0 {
+	if uid == 0 || uid == c.user.id {
 		c.SendError("notfound")
 		return
 	}
 
-	api.sendPrivmsg(c.user.id, uid, msg)
-
+	if err := api.sendPrivmsg(c.user.id, uid, msg); err != nil {
+		D("privmsg send error", err)
+	}
 }
 
 func (c *Connection) Names() {
