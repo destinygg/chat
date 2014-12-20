@@ -43,7 +43,7 @@ func initRedis(addr string, db int64, pw string) {
 	conn := redisGetConn()
 	defer conn.Return()
 
-	rdsCircularBuffer, err = conn.DoString("SCRIPT LOAD", `
+	rdsCircularBuffer, err = conn.DoString("SCRIPT", "LOAD", `
 		local key, value, maxlength = KEYS[1], ARGV[1], tonumber(ARGV[2])
 		if not maxlength then
 			return {err = "INVALID ARGUMENTS"}
@@ -61,7 +61,7 @@ func initRedis(addr string, db int64, pw string) {
 		F("Circular buffer script loading error", err)
 	}
 
-	rdsGetIPCache, err = conn.DoString("SCRIPT LOAD", `
+	rdsGetIPCache, err = conn.DoString("SCRIPT", "LOAD", `
 		local key = KEYS[1]
 		return redis.call("ZRANGEBYSCORE", key, 1, 3)
 	`)
@@ -69,7 +69,7 @@ func initRedis(addr string, db int64, pw string) {
 		F("Get IP Cache script loading error", err)
 	}
 
-	rdsSetIPCache, err = conn.DoString("SCRIPT LOAD", `
+	rdsSetIPCache, err = conn.DoString("SCRIPT", "LOAD", `
 		local key, value, maxlength = KEYS[1], ARGV[1], 3
 		
 		local count = redis.call("ZCOUNT", key, 1, maxlength)
