@@ -14,12 +14,12 @@ func Unpack(data string) (string, []byte, error) {
 	return result[0], []byte(result[1]), nil
 }
 
-func Unmarshal(data []byte, structPtr interface{}) error {
-	return json.Unmarshal(data, structPtr)
+func Unmarshal(data []byte, out interface{}) error {
+	return json.Unmarshal(data, out)
 }
 
-func Marshal(structPtr interface{}) ([]byte, error) {
-	return json.Marshal(structPtr)
+func Marshal(out interface{}) ([]byte, error) {
+	return json.Marshal(out)
 }
 
 func Pack(name string, data []byte) ([]byte, error) {

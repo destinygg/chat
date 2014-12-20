@@ -3,10 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
-	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,8 +20,7 @@ type userTools struct {
 }
 
 var (
-	cookievalid = regexp.MustCompile("^[a-z0-9]+$")
-	usertools   = userTools{
+	usertools = userTools{
 		nicklookup:  make(map[string]*uidprot),
 		nicklock:    sync.RWMutex{},
 		featurelock: sync.RWMutex{},
@@ -285,20 +281,11 @@ func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
 	} else {
 		// try authtoken auth
 		authtoken, err := r.Cookie("authtoken")
-		if err != nil || !cookievalid.MatchString(authtoken.Value) {
+		if err != nil {
 			return
 		}
 
-		resp, err := http.PostForm(authtokenurl, url.Values{"authtoken": {authtoken.Value}})
-		if resp != nil && resp.Body != nil {
-			defer resp.Body.Close()
-		}
-
-		if err != nil || resp.StatusCode != 200 {
-			return
-		}
-
-		authdata, _ = ioutil.ReadAll(resp.Body)
+		authdata, _ = api.getUserFromAuthToken(authtoken.Value)
 	}
 
 	user = userfromSession(authdata, false)

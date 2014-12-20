@@ -56,7 +56,6 @@ var (
 	debuggingenabled = false
 	DELAY            = 300 * time.Millisecond
 	MAXTHROTTLETIME  = 5 * time.Minute
-	authtokenurl     string
 )
 
 func main() {
@@ -69,7 +68,6 @@ func main() {
 		nc.AddOption("default", "maxprocesses", "0")
 		nc.AddOption("default", "chatdelay", fmt.Sprintf("%d", 300*time.Millisecond))
 		nc.AddOption("default", "maxthrottletime", fmt.Sprintf("%d", 5*time.Minute))
-		nc.AddOption("default", "authtokenurl", "http://www.destiny.gg/Auth/Api")
 
 		nc.AddSection("redis")
 		nc.AddOption("redis", "address", "localhost:6379")
@@ -79,6 +77,10 @@ func main() {
 		nc.AddSection("database")
 		nc.AddOption("database", "type", "mysql")
 		nc.AddOption("database", "dsn", "username:password@tcp(localhost:3306)/destinygg?loc=UTC&parseTime=true&strict=true&timeout=1s&time_zone=\"+00:00\"")
+
+		nc.AddSection("api")
+		nc.AddOption("api", "url", "http://www.destiny.gg/api")
+		nc.AddOption("api", "key", "changeme")
 
 		if err := nc.WriteConfigFile("settings.cfg", 0644, "DestinyChatBackend"); err != nil {
 			log.Fatal("Unable to create settings.cfg: ", err)
@@ -93,7 +95,8 @@ func main() {
 	processes, _ := c.GetInt64("default", "maxprocesses")
 	delay, _ := c.GetInt64("default", "chatdelay")
 	maxthrottletime, _ := c.GetInt64("default", "maxthrottletime")
-	authtokenurl, _ = c.GetString("default", "authtokenurl")
+	apiurl, _ := c.GetString("api", "url")
+	apikey, _ := c.GetString("api", "key")
 	DELAY = time.Duration(delay)
 	MAXTHROTTLETIME = time.Duration(maxthrottletime)
 
@@ -120,6 +123,7 @@ func main() {
 
 	state.load()
 
+	initApi(apiurl, apikey)
 	initRedis(redisaddr, redisdb, redispw)
 
 	initWatchdog()
@@ -139,7 +143,6 @@ func main() {
 
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			D("Websocket upgrade failed", err, r)
 			return
 		}
 

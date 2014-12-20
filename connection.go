@@ -68,21 +68,24 @@ type PingOut struct {
 	Timestamp int64 `json:"data"`
 }
 
-type NotifyIn struct {
-	Nick string `json:"nick"`
-	Data string `json:"data"`
-}
-
 type message struct {
 	msgtyp int
 	event  string
 	data   interface{}
 }
 
-type NotifyOut struct {
+type PrivmsgIn struct {
+	Nick string `json:"nick"`
+	Data string `json:"data"`
+}
+
+type PrivmsgOut struct {
 	message
-	from   Userid
-	notify *EventDataOut
+	targetuid Userid
+	Messageid int64  `json:"messageid"`
+	Timestamp int64  `json:"timestamp"`
+	Nick      string `json:"nick,omitempty"`
+	Data      string `json:"data,omitempty"`
 }
 
 // Create a new connection using the specified socket and router.
@@ -160,10 +163,6 @@ func (c *Connection) readPumpText() {
 		switch name {
 		case "MSG":
 			c.OnMsg(data)
-		case "PRIVMSG":
-			c.OnPrivmsg(data)
-		case "NOTIFY":
-			c.OnNotify(data)
 		case "MUTE":
 			c.OnMute(data)
 		case "UNMUTE":
@@ -180,6 +179,8 @@ func (c *Connection) readPumpText() {
 			c.OnPong(data)
 		case "BROADCAST":
 			c.OnBroadcast(data)
+		case "PRIVMSG":
+			c.OnPrivmsg(data)
 		}
 	}
 }
@@ -315,11 +316,12 @@ func (c *Connection) canModerateUser(nick string) (bool, Userid) {
 }
 
 func (c *Connection) getEventDataOut() *EventDataOut {
-	out := new(EventDataOut)
+	out := &EventDataOut{
+		Timestamp: unixMilliTime(),
+	}
 	if c.user != nil {
 		out.SimplifiedUser = c.user.simplified
 	}
-	out.Timestamp = unixMilliTime()
 	return out
 }
 
@@ -457,9 +459,9 @@ func (c *Connection) OnMsg(data []byte) {
 	c.Broadcast("MSG", out)
 }
 
-func (c *Connection) OnNotify(data []byte) {
-	nin := &NotifyIn{}
-	if err := Unmarshal(data, nin); err != nil {
+func (c *Connection) OnPrivmsg(data []byte) {
+	p := &PrivmsgIn{}
+	if err := Unmarshal(data, p); err != nil {
 		c.SendError("protocolerror")
 		return
 	}
@@ -469,45 +471,22 @@ func (c *Connection) OnNotify(data []byte) {
 		return
 	}
 
-	msg := strings.TrimSpace(nin.Data)
-	if cm := c.canMsg(msg); cm == false {
+	msg := strings.TrimSpace(p.Data)
+	msglen := utf8.RuneCountInString(msg)
+	if !utf8.ValidString(msg) || msglen == 0 || msglen > 512 || invalidmessage.MatchString(msg) {
+		c.SendError("invalidmsg")
 		return
 	}
 
-	uid, _ := usertools.getUseridForNick(nin.Nick)
+	uid, _ := usertools.getUseridForNick(p.Nick)
+	//if uid == 0 || uid == c.user.id {
 	if uid == 0 {
 		c.SendError("notfound")
 		return
 	}
 
-	out := c.getEventDataOut()
-	out.Data = msg
-	out.Targetuserid = uid
+	api.sendPrivmsg(c.user.id, uid, msg)
 
-	event := "NOTIFY"
-
-	c.rlockUserIfExists()
-	marshalled, _ := Marshal(out)
-	c.runlockUserIfExists()
-
-	n := &NotifyOut{
-		message: message{
-			event: event,
-			data:  marshalled,
-		},
-		from:   c.user.id,
-		notify: out,
-	}
-	hub.notify <- n
-}
-
-func (c *Connection) OnPrivmsg(data []byte) {
-	/*
-		if err := Unmarshal(data, &stuct{}); err != nil {
-			return
-		}
-	*/
-	// TODO check if valid utf8, api call? need to be sync so that we know what to return, not a problem, already running in a goroutine
 }
 
 func (c *Connection) Names() {

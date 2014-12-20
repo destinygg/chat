@@ -11,7 +11,7 @@ import (
 type Hub struct {
 	connections map[*Connection]bool
 	broadcast   chan *message
-	notify      chan *NotifyOut
+	privmsg     chan *PrivmsgOut
 	register    chan *Connection
 	unregister  chan *Connection
 	bans        chan Userid
@@ -29,7 +29,7 @@ type useridips struct {
 var hub = Hub{
 	connections: make(map[*Connection]bool),
 	broadcast:   make(chan *message, BROADCASTCHANNELSIZE),
-	notify:      make(chan *NotifyOut, BROADCASTCHANNELSIZE),
+	privmsg:     make(chan *PrivmsgOut, BROADCASTCHANNELSIZE),
 	register:    make(chan *Connection, 256),
 	unregister:  make(chan *Connection),
 	bans:        make(chan Userid, 4),
@@ -95,11 +95,11 @@ func (hub *Hub) run() {
 					c.sendmarshalled <- message
 				}
 			}
-		case n := <-hub.notify:
+		case p := <-hub.privmsg:
 			for c, _ := range hub.connections {
-				if c.user != nil && (c.user.id == n.from || c.user.id == n.notify.Targetuserid) {
+				if c.user != nil && c.user.id == p.targetuid {
 					if len(c.sendmarshalled) < SENDCHANNELSIZE {
-						c.sendmarshalled <- &n.message
+						c.sendmarshalled <- &p.message
 					}
 				}
 			}
@@ -144,6 +144,7 @@ func (hub *Hub) toggleSubmode(enabled bool) {
 
 func initBroadcast(redisdb int64) {
 	go setupBroadcast(redisdb)
+	go setupPrivmsg(redisdb)
 }
 
 func setupBroadcast(redisdb int64) {
@@ -164,5 +165,37 @@ func setupBroadcast(redisdb int64) {
 			data:  m,
 		}
 		db.insertChatEvent(Userid(0), "BROADCAST", data)
+	})
+}
+
+func setupPrivmsg(redisdb int64) {
+	setupRedisSubscription("privmsg", redisdb, func(result *redis.PublishedValue) {
+		var d struct {
+			Username     string
+			Targetuserid Userid
+			Message      string
+			Messageid    int64
+		}
+
+		err := json.Unmarshal(result.Value.Bytes(), &d)
+		if err != nil {
+			D("unable to unmarshal broadcast message", result.Value.String())
+			return
+		}
+
+		p := &PrivmsgOut{
+			message: message{
+				event: "PRIVMSG",
+			},
+			Nick:      d.Username,
+			targetuid: d.Targetuserid,
+			Data:      d.Message,
+			Messageid: d.Messageid,
+			Timestamp: unixMilliTime(),
+		}
+
+		p.message.data, _ = Marshal(p)
+
+		hub.privmsg <- p
 	})
 }
