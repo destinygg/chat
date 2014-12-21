@@ -285,7 +285,11 @@ func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
 			return
 		}
 
-		authdata, _ = api.getUserFromAuthToken(authtoken.Value)
+		authdata, err = api.getUserFromAuthToken(authtoken.Value)
+		if err != nil {
+			D("getUserFromAuthToken error", err)
+			return
+		}
 	}
 
 	user = userfromSession(authdata, false)

@@ -74,7 +74,12 @@ func (a *Api) sendPrivmsg(fromuid, targetuid Userid, msg string) error {
 	}
 
 	if resp.StatusCode != 204 {
-		return fmt.Errorf("api: privmsg response code: %d", resp.StatusCode)
+		ret, err := ioutil.ReadAll(resp.Body)
+		if err == nil {
+			D("sendprivmsg error", string(ret))
+		}
+		err = fmt.Errorf("api: privmsg response code: %d", resp.StatusCode)
+		return err
 	}
 
 	return nil

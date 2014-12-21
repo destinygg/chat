@@ -377,7 +377,7 @@ func (c *Connection) OnBroadcast(data []byte) {
 
 }
 
-func (c *Connection) canMsg(msg string) bool {
+func (c *Connection) canMsg(msg string, ignoresilence bool) bool {
 
 	msglen := utf8.RuneCountInString(msg)
 	if !utf8.ValidString(msg) || msglen == 0 || msglen > 512 || invalidmessage.MatchString(msg) {
@@ -385,14 +385,16 @@ func (c *Connection) canMsg(msg string) bool {
 		return false
 	}
 
-	if mutes.isUserMuted(c) {
-		c.SendError("muted")
-		return false
-	}
+	if !ignoresilence {
+		if mutes.isUserMuted(c) {
+			c.SendError("muted")
+			return false
+		}
 
-	if !hub.canUserSpeak(c) {
-		c.SendError("submode")
-		return false
+		if !hub.canUserSpeak(c) {
+			c.SendError("submode")
+			return false
+		}
 	}
 
 	if c.user != nil && !c.user.isBot() {
@@ -450,7 +452,7 @@ func (c *Connection) OnMsg(data []byte) {
 	}
 
 	msg := strings.TrimSpace(m.Data)
-	if !c.canMsg(msg) {
+	if !c.canMsg(msg, false) {
 		return
 	}
 
@@ -472,9 +474,7 @@ func (c *Connection) OnPrivmsg(data []byte) {
 	}
 
 	msg := strings.TrimSpace(p.Data)
-	msglen := utf8.RuneCountInString(msg)
-	if !utf8.ValidString(msg) || msglen == 0 || msglen > 512 || invalidmessage.MatchString(msg) {
-		c.SendError("invalidmsg")
+	if !c.canMsg(msg, true) {
 		return
 	}
 
@@ -486,6 +486,7 @@ func (c *Connection) OnPrivmsg(data []byte) {
 
 	if err := api.sendPrivmsg(c.user.id, uid, msg); err != nil {
 		D("privmsg send error", err)
+		c.SendError("nopermission")
 	}
 }
 
