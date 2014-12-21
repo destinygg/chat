@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -74,12 +75,22 @@ func (a *Api) sendPrivmsg(fromuid, targetuid Userid, msg string) error {
 	}
 
 	if resp.StatusCode != 204 {
-		ret, err := ioutil.ReadAll(resp.Body)
+		d, err := ioutil.ReadAll(resp.Body)
 		if err == nil {
-			D("sendprivmsg error", string(ret))
+			var s struct {
+				Error string
+			}
+
+			err = json.Unmarshal(d, &s)
+			if err != nil {
+				D("sendprivmsg unmarshal error", string(d))
+				return fmt.Errorf("unknown")
+			} else {
+				return fmt.Errorf(s.Error)
+			}
 		}
-		err = fmt.Errorf("api: privmsg response code: %d", resp.StatusCode)
-		return err
+
+		return fmt.Errorf("api: privmsg response code: %d", resp.StatusCode)
 	}
 
 	return nil
