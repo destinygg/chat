@@ -485,6 +485,7 @@ func (c *Connection) OnPrivmsg(data []byte) {
 	}
 
 	if err := api.sendPrivmsg(c.user.id, uid, msg); err != nil {
+		D("send error from", c.user.nick, err)
 		c.SendError(err.Error())
 	} else {
 		c.EmitBlock("PRIVMSGSENT", "")
