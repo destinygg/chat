@@ -25,7 +25,7 @@ func (mj *sessionuser) MarshalJSONBuf(buf fflib.EncodingBuffer) error {
 	var obj []byte
 	_ = obj
 	_ = err
-	buf.WriteString(`{"Features":`)
+	buf.WriteString(`{"features":`)
 	if mj.Features != nil {
 		buf.WriteString(`[`)
 		for i, v := range mj.Features {
@@ -38,9 +38,9 @@ func (mj *sessionuser) MarshalJSONBuf(buf fflib.EncodingBuffer) error {
 	} else {
 		buf.WriteString(`null`)
 	}
-	buf.WriteString(`, "UserId":`)
+	buf.WriteString(`, "userId":`)
 	fflib.WriteJsonString(buf, string(mj.UserId))
-	buf.WriteString(`, "Username":`)
+	buf.WriteString(`, "username":`)
 	fflib.WriteJsonString(buf, string(mj.Username))
 	buf.WriteString(`, `)
 	buf.Rewind(2)
@@ -59,11 +59,11 @@ const (
 	ffj_t_sessionuser_Username
 )
 
-var ffj_key_sessionuser_Features = []byte("Features")
+var ffj_key_sessionuser_Features = []byte("features")
 
-var ffj_key_sessionuser_UserId = []byte("UserId")
+var ffj_key_sessionuser_UserId = []byte("userId")
 
-var ffj_key_sessionuser_Username = []byte("Username")
+var ffj_key_sessionuser_Username = []byte("username")
 
 func (uj *sessionuser) UnmarshalJSON(input []byte) error {
 	fs := fflib.NewFFLexer(input)
@@ -124,7 +124,7 @@ mainparse:
 			} else {
 				switch kn[0] {
 
-				case 'F':
+				case 'f':
 
 					if bytes.Equal(ffj_key_sessionuser_Features, kn) {
 						currentKey = ffj_t_sessionuser_Features
@@ -132,7 +132,7 @@ mainparse:
 						goto mainparse
 					}
 
-				case 'U':
+				case 'u':
 
 					if bytes.Equal(ffj_key_sessionuser_UserId, kn) {
 						currentKey = ffj_t_sessionuser_UserId

@@ -87,7 +87,7 @@ func (nc *namesCache) marshalNames(updateircnames bool) {
 		nc.ircnames = namelines
 	}
 
-	n := &NamesOut{
+	n := NamesOut{
 		Users:       users,
 		Connections: nc.usercount,
 	}

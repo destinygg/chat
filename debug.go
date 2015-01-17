@@ -54,16 +54,28 @@ func F(v ...interface{}) {
 
 func D(v ...interface{}) {
 	if debuggingenabled {
-		log.Println(v...)
+		formatstring := ""
+		for range v {
+			formatstring += " %+v"
+		}
+		log.Printf(formatstring, v...)
 	}
 }
 
 func DP(v ...interface{}) {
 	if debuggingenabled {
-		log.Print(v...)
+		formatstring := ""
+		for range v {
+			formatstring += " %+v"
+		}
+		log.Printf(formatstring, v...)
 	}
 }
 
 func P(v ...interface{}) {
-	log.Println(v...)
+	formatstring := ""
+	for range v {
+		formatstring += " %+v"
+	}
+	log.Printf(formatstring, v...)
 }

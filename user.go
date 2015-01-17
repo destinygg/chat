@@ -108,9 +108,9 @@ type User struct {
 }
 
 type sessionuser struct {
-	Username string
-	UserId   string
-	Features []string
+	Username string   `json:"username"`
+	UserId   string   `json:"userId"`
+	Features []string `json:"features"`
 }
 
 func userfromSession(m []byte) (u *User) {
