@@ -1,7 +1,7 @@
+//go:generate ffjson user.go
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -12,6 +12,7 @@ import (
 	"github.com/tideland/godm/v3/redis"
 )
 
+// ffjson: skip
 type userTools struct {
 	nicklookup  map[string]*uidprot
 	nicklock    sync.RWMutex
@@ -37,13 +38,7 @@ const (
 	ISBOT        = 1 << iota
 )
 
-type uidnickfeaturechan struct {
-	userid   Userid
-	nick     string
-	features []string
-	c        chan *User
-}
-
+// ffjson: skip
 type uidprot struct {
 	id        Userid
 	protected bool
@@ -96,7 +91,10 @@ func runRefreshUser(redisdb int64) {
 }
 
 // ----------
+// ffjson: skip
 type Userid int32
+
+// ffjson: skip
 type User struct {
 	id              Userid
 	nick            string
@@ -109,14 +107,16 @@ type User struct {
 	sync.RWMutex
 }
 
-func userfromSession(m []byte) (u *User) {
-	var su struct {
-		Username string
-		UserId   string
-		Features []string
-	}
+type sessionuser struct {
+	Username string
+	UserId   string
+	Features []string
+}
 
-	err := json.Unmarshal(m, &su)
+func userfromSession(m []byte) (u *User) {
+	var su sessionuser
+
+	err := su.UnmarshalJSON(m)
 	if err != nil {
 		B("Unable to unmarshal sessionuser string: ", string(m))
 		return

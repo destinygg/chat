@@ -1,2 +1,2 @@
 #!/bin/bash
-go run -race main.go connection.go hub.go mutes.go bans.go data.go user.go debug.go cache.go database.go api.go namescache.go watchdog.go
+go run -race main.go connection.go hub.go mutes.go bans.go data.go user.go user_ffjson.go debug.go cache.go database.go api.go namescache.go namescache_ffjson.go watchdog.go

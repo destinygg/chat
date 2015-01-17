@@ -1,3 +1,4 @@
+//go:generate ffjson namescache.go
 package main
 
 import (
@@ -5,6 +6,7 @@ import (
 	"sync/atomic"
 )
 
+// ffjson: skip
 type namesCache struct {
 	users           map[Userid]*User
 	marshallednames []byte
@@ -13,6 +15,7 @@ type namesCache struct {
 	sync.RWMutex
 }
 
+// ffjson: skip
 type userChan struct {
 	user *User
 	c    chan *User
@@ -84,10 +87,11 @@ func (nc *namesCache) marshalNames(updateircnames bool) {
 		nc.ircnames = namelines
 	}
 
-	nc.marshallednames, _ = Marshal(&NamesOut{
+	n := &NamesOut{
 		Users:       users,
 		Connections: nc.usercount,
-	})
+	}
+	nc.marshallednames, _ = n.MarshalJSON()
 
 	for _, u := range nc.users {
 		u.RUnlock()
