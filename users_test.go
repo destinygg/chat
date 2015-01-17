@@ -12,7 +12,7 @@ func TestUserLookup(t *testing.T) {
 	u.id = uid
 	u.nick = nick
 
-	usertools.addUser(u)
+	usertools.addUser(u, true)
 	if r, _ := usertools.getUseridForNick(nick); r != uid {
 		t.Error("usertools.adduser failed, returned uid was: ", r, "(expected:", uid, ") for nick: ", nick)
 	}

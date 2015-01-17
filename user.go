@@ -49,12 +49,6 @@ type uidprot struct {
 	protected bool
 }
 
-type sessionUser struct {
-	Username string
-	UserId   string
-	Features []string
-}
-
 func initUsers(redisdb int64) {
 	go runRefreshUser(redisdb)
 }
@@ -95,7 +89,7 @@ func (ut *userTools) addUser(u *User, force bool) {
 
 func runRefreshUser(redisdb int64) {
 	setupRedisSubscription("refreshuser", redisdb, func(result *redis.PublishedValue) {
-		user := userfromSession(result.Value.Bytes(), true)
+		user := userfromSession(result.Value.Bytes())
 		namescache.refresh(user)
 		hub.refreshuser <- user.id
 	})
@@ -115,8 +109,13 @@ type User struct {
 	sync.RWMutex
 }
 
-func userfromSession(m []byte, forceupdate bool) (u *User) {
-	var su sessionUser
+func userfromSession(m []byte) (u *User) {
+	var su struct {
+		Username string
+		UserId   string
+		Features []string
+	}
+
 	err := json.Unmarshal(m, &su)
 	if err != nil {
 		B("Unable to unmarshal sessionuser string: ", string(m))
@@ -141,6 +140,12 @@ func userfromSession(m []byte, forceupdate bool) (u *User) {
 	}
 
 	u.setFeatures(su.Features)
+
+	forceupdate := false
+	if cu := namescache.get(u.id); cu != nil && cu.features == u.features {
+		forceupdate = true
+	}
+
 	u.assembleSimplifiedUser()
 	usertools.addUser(u, forceupdate)
 	return
@@ -292,7 +297,7 @@ func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
 		}
 	}
 
-	user = userfromSession(authdata, false)
+	user = userfromSession(authdata)
 	if user == nil {
 		return
 	}

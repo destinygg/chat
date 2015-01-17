@@ -100,6 +100,13 @@ func (nc *namesCache) getNames() []byte {
 	return nc.marshallednames
 }
 
+func (nc *namesCache) get(id Userid) *User {
+	nc.RLock()
+	defer nc.RUnlock()
+	u, _ := nc.users[id]
+	return u
+}
+
 func (nc *namesCache) add(user *User) *User {
 	nc.Lock()
 	defer nc.Unlock()
