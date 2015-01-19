@@ -265,7 +265,11 @@ func (u *User) assembleSimplifiedUser() {
 
 // ----------
 func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
-	ip := r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
+	ip := r.Header.Get("X-Real-Ip")
+	if ip == "" {
+		ip = r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
+	}
+
 	banned = bans.isIPBanned(ip)
 	if banned {
 		return
