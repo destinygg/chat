@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"net"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/tideland/godm/v3/redis"
@@ -46,14 +46,9 @@ func initHub() {
 
 func (hub *Hub) run() {
 	pinger := time.NewTicker(PINGINTERVAL)
-	t := time.NewTicker(time.Minute)
-	cp := watchdog.register("hub thread", time.Minute)
-	defer watchdog.unregister("hub thread")
 
 	for {
 		select {
-		case <-t.C:
-			cp <- true
 		case c := <-hub.register:
 			hub.connections[c] = true
 		case c := <-hub.unregister:
@@ -61,22 +56,21 @@ func (hub *Hub) run() {
 		case userid := <-hub.refreshuser:
 			for c, _ := range hub.connections {
 				if c.user != nil && c.user.id == userid {
-					c.Refresh()
+					go c.Refresh()
 				}
 			}
 		case userid := <-hub.bans:
 			for c, _ := range hub.connections {
 				if c.user != nil && c.user.id == userid {
-					c.Banned()
+					go c.Banned()
 				}
 			}
 		case stringip := <-hub.ipbans:
 			for c := range hub.connections {
 				addr := c.socket.UnderlyingConn().RemoteAddr().String()
-				pos := strings.LastIndex(addr, ":")
-				ip := addr[:pos]
-				if ip == stringip {
-					c.Banned()
+				ip, _, _ := net.SplitHostPort(addr)
+				if getMaskedIP(ip) == stringip {
+					go c.Banned()
 				}
 			}
 		case d := <-hub.getips:
@@ -84,9 +78,8 @@ func (hub *Hub) run() {
 			for c, _ := range hub.connections {
 				if c.user != nil && c.user.id == d.userid {
 					addr := c.socket.UnderlyingConn().RemoteAddr().String()
-					pos := strings.LastIndex(addr, ":")
-					ip := addr[:pos]
-					ips = append(ips, ip)
+					ip, _, _ := net.SplitHostPort(addr)
+					ips = append(ips, getMaskedIP(ip))
 				}
 			}
 			d.c <- ips

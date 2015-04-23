@@ -3,6 +3,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -267,7 +268,7 @@ func (u *User) assembleSimplifiedUser() {
 func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
 	ip := r.Header.Get("X-Real-Ip")
 	if ip == "" {
-		ip = r.RemoteAddr[:strings.LastIndex(r.RemoteAddr, ":")]
+		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
 	}
 
 	banned = bans.isIPBanned(ip)

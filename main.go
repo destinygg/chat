@@ -111,22 +111,12 @@ func main() {
 		processes = int64(runtime.NumCPU())
 	}
 	runtime.GOMAXPROCS(int(processes))
-	go (func() {
-		t := time.NewTicker(time.Minute)
-		for {
-			select {
-			case <-t.C:
-				runtime.GC()
-			}
-		}
-	})()
 
 	state.load()
 
 	initApi(apiurl, apikey)
 	initRedis(redisaddr, redisdb, redispw)
 
-	initWatchdog()
 	initNamesCache()
 	initHub()
 	initDatabase(dbtype, dbdsn)

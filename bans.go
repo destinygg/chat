@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"net"
 	"sync"
 	"time"
 
@@ -18,7 +19,8 @@ type Bans struct {
 }
 
 var (
-	bans = Bans{
+	ipv6mask = net.CIDRMask(64, 128)
+	bans     = Bans{
 		make(map[Userid]time.Time),
 		sync.RWMutex{},
 		make(map[string]time.Time),
@@ -26,6 +28,15 @@ var (
 		sync.RWMutex{},
 	}
 )
+
+func getMaskedIP(s string) string {
+	ip := net.ParseIP(s)
+	if len(ip) == net.IPv6len {
+		return ip.Mask(ipv6mask).String()
+	} else {
+		return s
+	}
+}
 
 func initBans(redisdb int64) {
 	go bans.run(redisdb)
@@ -176,7 +187,7 @@ func (b *Bans) isUseridBanned(uid Userid) bool {
 func (b *Bans) isIPBanned(ip string) bool {
 	b.iplock.RLock()
 	defer b.iplock.RUnlock()
-	t, ok := b.ips[ip]
+	t, ok := b.ips[getMaskedIP(ip)]
 	return isStillBanned(t, ok)
 }
 
