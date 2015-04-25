@@ -31,7 +31,7 @@ var (
 
 func getMaskedIP(s string) string {
 	ip := net.ParseIP(s)
-	if len(ip) == net.IPv6len {
+	if ip.To4() == nil {
 		return ip.Mask(ipv6mask).String()
 	} else {
 		return s
