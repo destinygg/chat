@@ -27,6 +27,7 @@ var invalidmessage = regexp.MustCompile(`\p{M}{5,}|[\p{Zl}\p{Zp}\x{202f}\x{00a0}
 
 type Connection struct {
 	socket         *websocket.Conn
+	ip             string
 	send           chan *message
 	sendmarshalled chan *message
 	blocksend      chan *message
@@ -89,9 +90,10 @@ type PrivmsgOut struct {
 }
 
 // Create a new connection using the specified socket and router.
-func newConnection(s *websocket.Conn, user *User) {
+func newConnection(s *websocket.Conn, user *User, ip string) {
 	c := &Connection{
 		socket:         s,
+		ip:             ip,
 		send:           make(chan *message, SENDCHANNELSIZE),
 		sendmarshalled: make(chan *message, SENDCHANNELSIZE),
 		blocksend:      make(chan *message),

@@ -187,7 +187,7 @@ func (b *Bans) isUseridBanned(uid Userid) bool {
 func (b *Bans) isIPBanned(ip string) bool {
 	b.iplock.RLock()
 	defer b.iplock.RUnlock()
-	t, ok := b.ips[getMaskedIP(ip)]
+	t, ok := b.ips[ip]
 	return isStillBanned(t, ok)
 }
 

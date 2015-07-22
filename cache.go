@@ -118,7 +118,7 @@ func cacheIPForUser(userid Userid, ip string) {
 	conn := redisGetConn()
 	defer conn.Return()
 
-	_, err := conn.Do("EVALSHA", rdsSetIPCache, 1, fmt.Sprintf("CHAT:userips-%d", userid), getMaskedIP(ip))
+	_, err := conn.Do("EVALSHA", rdsSetIPCache, 1, fmt.Sprintf("CHAT:userips-%d", userid), ip)
 	if err != nil {
 		D("cacheIPForUser redis error", err)
 	}
@@ -131,10 +131,6 @@ func getIPCacheForUser(userid Userid) []string {
 	ips, err := conn.DoStrings("EVALSHA", rdsGetIPCache, 1, fmt.Sprintf("CHAT:userips-%d", userid))
 	if err != nil {
 		D("getIPCacheForUser redis error", err)
-	}
-
-	for k, v := range ips {
-		ips[k] = getMaskedIP(v)
 	}
 
 	return ips

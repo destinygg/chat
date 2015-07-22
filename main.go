@@ -136,7 +136,7 @@ func main() {
 			return
 		}
 
-		user, banned := getUserFromWebRequest(r)
+		user, banned, ip := getUserFromWebRequest(r)
 
 		if banned {
 			ws.SetWriteDeadline(time.Now().Add(WRITETIMEOUT))
@@ -144,7 +144,7 @@ func main() {
 			return
 		}
 
-		newConnection(ws, user)
+		newConnection(ws, user, ip)
 	})
 
 	fmt.Printf("Using %v threads, and listening on: %v\n", processes, addr)

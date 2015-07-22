@@ -265,12 +265,13 @@ func (u *User) assembleSimplifiedUser() {
 }
 
 // ----------
-func getUserFromWebRequest(r *http.Request) (user *User, banned bool) {
-	ip := r.Header.Get("X-Real-Ip")
+func getUserFromWebRequest(r *http.Request) (user *User, banned bool, ip string) {
+	ip = r.Header.Get("X-Real-Ip")
 	if ip == "" {
 		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
 	}
 
+	ip = getMaskedIP(ip)
 	banned = bans.isIPBanned(ip)
 	if banned {
 		return

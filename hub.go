@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"net"
 	"strconv"
 	"time"
 
@@ -67,9 +66,8 @@ func (hub *Hub) run() {
 			}
 		case stringip := <-hub.ipbans:
 			for c := range hub.connections {
-				addr := c.socket.UnderlyingConn().RemoteAddr().String()
-				ip, _, _ := net.SplitHostPort(addr)
-				if getMaskedIP(ip) == stringip {
+				if c.ip == stringip {
+					DP("Found connection to ban with ip", stringip, "user", c.user)
 					go c.Banned()
 				}
 			}
@@ -77,9 +75,7 @@ func (hub *Hub) run() {
 			ips := make([]string, 0, 3)
 			for c, _ := range hub.connections {
 				if c.user != nil && c.user.id == d.userid {
-					addr := c.socket.UnderlyingConn().RemoteAddr().String()
-					ip, _, _ := net.SplitHostPort(addr)
-					ips = append(ips, getMaskedIP(ip))
+					ips = append(ips, c.ip)
 				}
 			}
 			d.c <- ips
