@@ -8,6 +8,7 @@ Group=sztanpet
 WorkingDirectory=/home/sztanpet/chat/live
 ExecStart=/home/sztanpet/chat/live/chat
 Restart=on-failure
+LimitNOFILE=80000
 
 [Install]
 WantedBy=multi-user.target
