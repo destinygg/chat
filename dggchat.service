@@ -1,0 +1,13 @@
+[Unit]
+Description=dggchat is the chat backend for destiny.gg
+After=network.target
+
+[Service]
+User=sztanpet
+Group=sztanpet
+WorkingDirectory=/home/sztanpet/chat/live
+ExecStart=/home/sztanpet/chat/live/chat
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
