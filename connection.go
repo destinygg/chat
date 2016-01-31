@@ -419,23 +419,6 @@ func (c *Connection) canMsg(msg string, ignoresilence bool) bool {
 		}
 		c.user.lastmessagetime = now
 
-		// strip off /me for anti-spam purposes
-		var bmsg []byte
-		if len(msg) > 4 && msg[:4] == "/me " {
-			bmsg = []byte(strings.TrimSpace(msg[4:]))
-		} else {
-			bmsg = []byte(msg)
-		}
-
-		tsum := md5.Sum(bmsg)
-		sum := tsum[:]
-		if bytes.Equal(sum, c.user.lastmessage) {
-			c.user.delayscale++
-			c.SendError("duplicate")
-			return false
-		}
-		c.user.lastmessage = sum
-
 	}
 
 	return true
@@ -457,6 +440,23 @@ func (c *Connection) OnMsg(data []byte) {
 	if !c.canMsg(msg, false) {
 		return
 	}
+
+	// strip off /me for anti-spam purposes
+	var bmsg []byte
+	if len(msg) > 4 && msg[:4] == "/me " {
+		bmsg = []byte(strings.TrimSpace(msg[4:]))
+	} else {
+		bmsg = []byte(msg)
+	}
+
+	tsum := md5.Sum(bmsg)
+	sum := tsum[:]
+	if bytes.Equal(sum, c.user.lastmessage) {
+		c.user.delayscale++
+		c.SendError("duplicate")
+		return
+	}
+	c.user.lastmessage = sum
 
 	out := c.getEventDataOut()
 	out.Data = msg
