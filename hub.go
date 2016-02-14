@@ -80,6 +80,10 @@ func (hub *Hub) run() {
 			}
 			d.c <- ips
 		case message := <-hub.broadcast:
+			if message.event != "JOIN" && message.event != "QUIT" {
+				cacheChatEvent(message)
+			}
+
 			for c := range hub.connections {
 				if len(c.sendmarshalled) < SENDCHANNELSIZE {
 					c.sendmarshalled <- message
@@ -154,7 +158,6 @@ func setupBroadcast(redisdb int64) {
 			event: "BROADCAST",
 			data:  m,
 		}
-		cacheChatEvent(Userid(0), "BROADCAST", data)
 	})
 }
 

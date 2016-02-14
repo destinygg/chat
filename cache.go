@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -209,27 +208,14 @@ func redisGetBytes(key string) ([]byte, error) {
 	return value.Bytes(), err
 }
 
-func cacheChatEvent(uid Userid, event string, edata *EventDataOut) {
+func cacheChatEvent(msg *message) {
 	conn := redisGetConn()
 	defer conn.Return()
 
-	row := struct {
-		Userid       int32  `json:"userid"`
-		Targetuserid int32  `json:"targetuserid"`
-		Event        string `json:"event"`
-		Data         string `json:"data"`
-		Timestamp    int64  `json:"timestamp"`
-	}{
-		Userid:       int32(uid),
-		Targetuserid: int32(edata.Targetuserid),
-		Event:        event,
-		Data:         edata.Data,
-		Timestamp:    edata.Timestamp,
-	}
-
-	data, err := json.Marshal(row)
+	data, err := Pack(msg.event, msg.data.([]byte))
 	if err != nil {
-		D("cacheChatEvent json marshal error", err)
+		D("cacheChatEvent pack error", err)
+		return
 	}
 
 	_, err = conn.Do(

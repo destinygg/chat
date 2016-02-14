@@ -298,10 +298,6 @@ func (c *Connection) Broadcast(event string, data *EventDataOut) {
 		data:  marshalled,
 	}
 	hub.broadcast <- m
-	if event != "JOIN" && event != "QUIT" {
-		// by definition only users can send messages
-		cacheChatEvent(c.user.id, event, data)
-	}
 }
 
 func (c *Connection) canModerateUser(nick string) (bool, Userid) {
