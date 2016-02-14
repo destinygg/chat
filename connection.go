@@ -300,7 +300,7 @@ func (c *Connection) Broadcast(event string, data *EventDataOut) {
 	hub.broadcast <- m
 	if event != "JOIN" && event != "QUIT" {
 		// by definition only users can send messages
-		db.insertChatEvent(c.user.id, event, data)
+		cacheChatEvent(c.user.id, event, data)
 	}
 }
 

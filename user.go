@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tideland/godm/v3/redis"
+	"github.com/tideland/golib/redis"
 )
 
 // ffjson: skip

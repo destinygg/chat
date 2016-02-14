@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/tideland/godm/v3/redis"
+	"github.com/tideland/golib/redis"
 )
 
 type Hub struct {
@@ -154,7 +154,7 @@ func setupBroadcast(redisdb int64) {
 			event: "BROADCAST",
 			data:  m,
 		}
-		db.insertChatEvent(Userid(0), "BROADCAST", data)
+		cacheChatEvent(Userid(0), "BROADCAST", data)
 	})
 }
 

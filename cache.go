@@ -1,10 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
-	"github.com/tideland/godm/v3/redis"
+	"github.com/tideland/golib/redis"
 )
 
 var (
@@ -13,6 +14,9 @@ var (
 	rdsGetIPCache     string
 	rdsSetIPCache     string
 )
+
+// how many log lines to buffer for the scrollback
+const CHATLOGLINES = 150
 
 func redisGetConn() *redis.Connection {
 again:
@@ -44,18 +48,32 @@ func initRedis(addr string, db int64, pw string) {
 	defer conn.Return()
 
 	rdsCircularBuffer, err = conn.DoString("SCRIPT", "LOAD", `
-		local key, value, maxlength = KEYS[1], ARGV[1], tonumber(ARGV[2])
-		if not maxlength then
-			return {err = "INVALID ARGUMENTS"}
+		local key = KEYS[1]
+		local maxlines = tonumber(ARGV[1])
+		local payload = ARGV[2]
+
+		if not key then
+		  return {err = "INVALID KEY"}
 		end
-		
-		redis.call("RPUSH", key, value)
-		local listlength = redis.call("LLEN", key)
-		
-		if listlength >= maxlength then
-			local start = listlength - maxlength
-			redis.call("LTRIM", key, start, maxlength)
+		if not payload then
+		  return {err = "INVALID PAYLOAD"}
 		end
+		if not maxlines then
+		  return {err = "INVALID MAXLINES"}
+		end
+
+		-- push the payload onto the end
+		redis.call("RPUSH", key, payload)
+
+		local delcount = 0
+		-- get rid of excess lines from the front
+		local numlines = redis.call("LLEN", key)
+		for _ = numlines, maxlines, -1 do
+			redis.call("LPOP", key)
+			delcount = delcount + 1
+		end
+
+		return delcount
 	`)
 	if err != nil {
 		F("Circular buffer script loading error", err)
@@ -189,4 +207,41 @@ func redisGetBytes(key string) ([]byte, error) {
 	}
 
 	return value.Bytes(), err
+}
+
+func cacheChatEvent(uid Userid, event string, edata *EventDataOut) {
+	conn := redisGetConn()
+	defer conn.Return()
+
+	row := struct {
+		Userid       int32  `json:"userid"`
+		Targetuserid int32  `json:"targetuserid"`
+		Event        string `json:"event"`
+		Data         string `json:"data"`
+		Timestamp    int64  `json:"timestamp"`
+	}{
+		Userid:       int32(uid),
+		Targetuserid: int32(edata.Targetuserid),
+		Event:        event,
+		Data:         edata.Data,
+		Timestamp:    edata.Timestamp,
+	}
+
+	data, err := json.Marshal(row)
+	if err != nil {
+		D("cacheChatEvent json marshal error", err)
+	}
+
+	_, err = conn.Do(
+		"EVALSHA",
+		rdsCircularBuffer,
+		1,
+		"CHAT:chatlog",
+		CHATLOGLINES,
+		data,
+	)
+
+	if err != nil {
+		D("cacheChatEvent redis error", err)
+	}
 }

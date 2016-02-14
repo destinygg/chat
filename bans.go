@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/tideland/godm/v3/redis"
+	"github.com/tideland/golib/redis"
 )
 
 type Bans struct {
