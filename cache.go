@@ -48,17 +48,17 @@ func initRedis(addr string, db int64, pw string) {
 
 	rdsCircularBuffer, err = conn.DoString("SCRIPT", "LOAD", `
 		local key = KEYS[1]
-		local maxlines = tonumber(ARGV[1])
+		local maxlength = tonumber(ARGV[1])
 		local payload = ARGV[2]
 
 		if not key then
-		  return {err = "INVALID KEY"}
+			return {err = "INVALID KEY"}
 		end
 		if not payload then
-		  return {err = "INVALID PAYLOAD"}
+			return {err = "INVALID PAYLOAD"}
 		end
-		if not maxlines then
-		  return {err = "INVALID MAXLINES"}
+		if not maxlength then
+			return {err = "INVALID MAXLENGTH"}
 		end
 
 		-- push the payload onto the end
@@ -67,7 +67,7 @@ func initRedis(addr string, db int64, pw string) {
 		local delcount = 0
 		-- get rid of excess lines from the front
 		local numlines = redis.call("LLEN", key)
-		for _ = numlines, maxlines, -1 do
+		for _ = numlines - 1, maxlength, -1 do
 			redis.call("LPOP", key)
 			delcount = delcount + 1
 		end
