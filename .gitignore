@@ -4,3 +4,4 @@ settings.cfg
 deploy.sh
 *.pprof
 .state.dc
+/.idea

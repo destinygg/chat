@@ -447,7 +447,7 @@ func (c *Connection) OnMsg(data []byte) {
 
 	tsum := md5.Sum(bmsg)
 	sum := tsum[:]
-	if bytes.Equal(sum, c.user.lastmessage) {
+	if bytes.Equal(sum, c.user.lastmessage) && !c.user.isBot() {
 		c.user.delayscale++
 		c.SendError("duplicate")
 		return

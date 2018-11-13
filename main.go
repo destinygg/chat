@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	_ "github.com/mkevac/debugcharts"
+	//_ "github.com/mkevac/debugcharts"
 	conf "github.com/msbranco/goconfig"
 )
 
