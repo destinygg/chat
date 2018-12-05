@@ -15,7 +15,7 @@ type Api struct {
 }
 
 var (
-	cookievalid = regexp.MustCompile("^[a-z0-9]{10,64}$")
+	cookievalid = regexp.MustCompile("^[A-z0-9]{10,64}$")
 	api         Api
 )
 
