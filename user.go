@@ -18,7 +18,7 @@ type userTools struct {
 	nicklookup  map[string]*uidprot
 	nicklock    sync.RWMutex
 	featurelock sync.RWMutex
-	features    map[uint32][]string
+	features    map[uint64][]string
 }
 
 var (
@@ -26,7 +26,7 @@ var (
 		nicklookup:  make(map[string]*uidprot),
 		nicklock:    sync.RWMutex{},
 		featurelock: sync.RWMutex{},
-		features:    make(map[uint32][]string),
+		features:    make(map[uint64][]string),
 	}
 )
 
@@ -99,7 +99,7 @@ type Userid int32
 type User struct {
 	id              Userid
 	nick            string
-	features        uint32
+	features        uint64
 	lastmessage     []byte
 	lastmessagetime time.Time
 	delayscale      uint8
@@ -152,11 +152,11 @@ func userfromSession(m []byte) (u *User) {
 	return
 }
 
-func (u *User) featureGet(bitnum uint32) bool {
+func (u *User) featureGet(bitnum uint64) bool {
 	return ((u.features & bitnum) != 0)
 }
 
-func (u *User) featureSet(bitnum uint32) {
+func (u *User) featureSet(bitnum uint64) {
 	u.features |= bitnum
 }
 
@@ -248,7 +248,7 @@ func (u *User) assembleSimplifiedUser() {
 			f = append(f, "bot")
 		}
 
-		for i := uint8(6); i < 32; i++ {
+		for i := uint8(6); i < 64; i++ {
 			if u.featureGet(1 << i) {
 				flair := fmt.Sprintf("flair%d", i-5)
 				f = append(f, flair)
