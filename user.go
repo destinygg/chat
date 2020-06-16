@@ -212,7 +212,7 @@ func (u *User) setFeatures(features []string) {
 					continue
 				}
 				// six proper features, all others are just useless flairs
-				u.featureSet(1 << (6 + uint8(flair)))
+				u.featureSet(1 << (5 + uint8(flair)))
 			}
 		}
 	}
@@ -248,9 +248,9 @@ func (u *User) assembleSimplifiedUser() {
 			f = append(f, "bot")
 		}
 
-		for i := uint8(6); i <= 26; i++ {
+		for i := uint8(6); i < 32; i++ {
 			if u.featureGet(1 << i) {
-				flair := fmt.Sprintf("flair%d", i-6)
+				flair := fmt.Sprintf("flair%d", i-5)
 				f = append(f, flair)
 			}
 		}
