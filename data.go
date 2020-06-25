@@ -9,7 +9,6 @@ import (
 func Unpack(packed string) (string, []byte, error) {
 	// The event name, followed by the data as a string
 	parts := strings.SplitN(packed, " ", 2)
-
 	if len(parts) != 2 {
 		return "", nil, errors.New("Unable to extract event name from data.")
 	}
