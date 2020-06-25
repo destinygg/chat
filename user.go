@@ -31,12 +31,12 @@ var (
 )
 
 const (
-	ISADMIN      = 1 << iota
-	ISMODERATOR  = 1 << iota
-	ISVIP        = 1 << iota
-	ISPROTECTED  = 1 << iota
-	ISSUBSCRIBER = 1 << iota
-	ISBOT        = 1 << iota
+	ISADMIN = iota
+	ISMODERATOR
+	ISVIP
+	ISPROTECTED
+	ISSUBSCRIBER
+	ISBOT
 )
 
 // ffjson: skip
