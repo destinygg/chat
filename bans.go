@@ -102,7 +102,7 @@ func (b *Bans) clean() {
 func (b *Bans) banUser(uid Userid, targetuid Userid, ban *BanIn) {
 	var expiretime time.Time
 
-	if ban.Ispermanent {
+	if ban.IsPermanent {
 		expiretime = getFuturetimeUTC()
 	} else {
 		expiretime = addDurationUTC(time.Duration(ban.Duration))

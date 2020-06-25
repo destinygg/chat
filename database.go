@@ -160,7 +160,7 @@ func (db *database) insertBan(uid Userid, targetuid Userid, ban *BanIn, ip strin
 	starttimestamp := time.Now().UTC()
 
 	endtimestamp := &mysql.NullTime{}
-	if !ban.Ispermanent {
+	if !ban.IsPermanent {
 		endtimestamp.Time = starttimestamp.Add(time.Duration(ban.Duration))
 		endtimestamp.Valid = true
 	}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 )
@@ -19,6 +18,6 @@ func Unpack(packed string) (string, []byte, error) {
 }
 
 // Pack packs an event name and byte data into a string formatted as such: "event_name data_as_string".
-func Pack(name string, data []byte) (result []byte) {
-	result = append([]byte(name+" "), data...)
+func Pack(name string, data []byte) []byte {
+	return append([]byte(name+" "), data...)
 }

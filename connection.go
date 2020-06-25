@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
+	"encoding/json"
 	"regexp"
 	"strings"
 	"sync"
@@ -61,7 +62,7 @@ type BanIn struct {
 	Nick        string `json:"nick"`
 	BanIP       bool   `json:"banip"`
 	Duration    int64  `json:"duration"`
-	Ispermanent bool   `json:"ispermanent"`
+	IsPermanent bool   `json:"ispermanent"`
 	Reason      string `json:"reason"`
 }
 
@@ -216,9 +217,9 @@ func (c *Connection) writePumpText() {
 			return
 		case m := <-c.blocksend:
 			c.rlockUserIfExists()
-			if data, err := Marshal(m.data); err == nil {
+			if data, err := json.Marshal(m.data); err == nil {
 				c.runlockUserIfExists()
-				if data, err := Pack(m.event, data); err == nil {
+				if data := Pack(m.event, data); err == nil {
 					if err := c.write(websocket.TextMessage, data); err != nil {
 						return
 					}
@@ -228,9 +229,9 @@ func (c *Connection) writePumpText() {
 			}
 		case m := <-c.send:
 			c.rlockUserIfExists()
-			if data, err := Marshal(m.data); err == nil {
+			if data, err := json.Marshal(m.data); err == nil {
 				c.runlockUserIfExists()
-				if data, err := Pack(m.event, data); err == nil {
+				if data := Pack(m.event, data); err == nil {
 					typ := m.msgtyp
 					if typ == 0 {
 						typ = websocket.TextMessage
@@ -243,15 +244,13 @@ func (c *Connection) writePumpText() {
 				c.runlockUserIfExists()
 			}
 		case message := <-c.sendmarshalled:
-			data := message.data.([]byte)
-			if data, err := Pack(message.event, data); err == nil {
-				typ := message.msgtyp
-				if typ == 0 {
-					typ = websocket.TextMessage
-				}
-				if err := c.write(typ, data); err != nil {
-					return
-				}
+			data := Pack(message.event, message.data.([]byte))
+			typ := message.msgtyp
+			if typ == 0 {
+				typ = websocket.TextMessage
+			}
+			if err := c.write(typ, data); err != nil {
+				return
 			}
 		}
 	}
@@ -290,7 +289,7 @@ func (c *Connection) EmitBlock(event string, data interface{}) {
 
 func (c *Connection) Broadcast(event string, data *EventDataOut) {
 	c.rlockUserIfExists()
-	marshalled, _ := Marshal(data)
+	marshalled, _ := json.Marshal(data)
 	c.runlockUserIfExists()
 
 	m := &message{
@@ -347,7 +346,7 @@ func (c *Connection) Quit() {
 
 func (c *Connection) OnBroadcast(data []byte) {
 	m := &EventDataIn{}
-	if err := Unmarshal(data, m); err != nil {
+	if err := json.Unmarshal(data, m); err != nil {
 		c.SendError("protocolerror")
 		return
 	}
@@ -422,7 +421,7 @@ func (c *Connection) canMsg(msg string, ignoresilence bool) bool {
 
 func (c *Connection) OnMsg(data []byte) {
 	m := &EventDataIn{}
-	if err := Unmarshal(data, m); err != nil {
+	if err := json.Unmarshal(data, m); err != nil {
 		c.SendError("protocolerror")
 		return
 	}
@@ -461,7 +460,7 @@ func (c *Connection) OnMsg(data []byte) {
 
 func (c *Connection) OnPrivmsg(data []byte) {
 	p := &PrivmsgIn{}
-	if err := Unmarshal(data, p); err != nil {
+	if err := json.Unmarshal(data, p); err != nil {
 		c.SendError("protocolerror")
 		return
 	}
@@ -500,7 +499,7 @@ func (c *Connection) Names() {
 
 func (c *Connection) OnMute(data []byte) {
 	mute := &EventDataIn{} // Data is the nick
-	if err := Unmarshal(data, mute); err != nil {
+	if err := json.Unmarshal(data, mute); err != nil {
 		c.SendError("protocolerror")
 		return
 	}
@@ -534,7 +533,7 @@ func (c *Connection) OnMute(data []byte) {
 
 func (c *Connection) OnUnmute(data []byte) {
 	user := &EventDataIn{} // Data is the nick
-	if err := Unmarshal(data, user); err != nil || utf8.RuneCountInString(user.Data) == 0 {
+	if err := json.Unmarshal(data, user); err != nil || utf8.RuneCountInString(user.Data) == 0 {
 		c.SendError("protocolerror")
 		return
 	}
@@ -562,7 +561,7 @@ func (c *Connection) Muted() {
 
 func (c *Connection) OnBan(data []byte) {
 	ban := &BanIn{}
-	if err := Unmarshal(data, ban); err != nil {
+	if err := json.Unmarshal(data, ban); err != nil {
 		c.SendError("protocolerror")
 		return
 	}
@@ -606,7 +605,7 @@ func (c *Connection) OnBan(data []byte) {
 
 func (c *Connection) OnUnban(data []byte) {
 	user := &EventDataIn{}
-	if err := Unmarshal(data, user); err != nil {
+	if err := json.Unmarshal(data, user); err != nil {
 		c.SendError("protocolerror")
 		return
 	}
@@ -636,7 +635,7 @@ func (c *Connection) Banned() {
 
 func (c *Connection) OnSubonly(data []byte) {
 	m := &EventDataIn{} // Data is on/off
-	if err := Unmarshal(data, m); err != nil {
+	if err := json.Unmarshal(data, m); err != nil {
 		c.SendError("protocolerror")
 		return
 	}

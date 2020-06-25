@@ -212,13 +212,8 @@ func cacheChatEvent(msg *message) {
 	conn := redisGetConn()
 	defer conn.Return()
 
-	data, err := Pack(msg.event, msg.data.([]byte))
-	if err != nil {
-		D("cacheChatEvent pack error", err)
-		return
-	}
-
-	_, err = conn.Do(
+	data := Pack(msg.event, msg.data.([]byte))
+	_, err := conn.Do(
 		"EVALSHA",
 		rdsCircularBuffer,
 		1,

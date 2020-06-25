@@ -153,7 +153,7 @@ func setupBroadcast(redisdb int64) {
 		data := &EventDataOut{}
 		data.Timestamp = unixMilliTime()
 		data.Data = bc.Data
-		m, _ := Marshal(data)
+		m, _ := json.Marshal(data)
 		hub.broadcast <- &message{
 			event: "BROADCAST",
 			data:  m,
@@ -199,7 +199,7 @@ func setupPrivmsg(redisdb int64) {
 			Timestamp: unixMilliTime(),
 		}
 
-		p.message.data, _ = Marshal(p)
+		p.message.data, _ = json.Marshal(p)
 
 		hub.privmsg <- p
 	})
