@@ -67,7 +67,7 @@ func main() {
 	signal.Notify(sct, syscall.SIGTERM)
 
 	go (func() {
-		for _ = range sct {
+		for range sct {
 			P("CAUGHT SIGTERM, restarting the chat")
 			shouldrestart <- true
 		}
