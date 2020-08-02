@@ -384,7 +384,7 @@ func (c *Connection) canMsg(msg string, ignoresilence bool) bool {
 	}
 
 	if !ignoresilence {
-		if mutes.isUserMuted(c) {
+		if mutes.muteTimeLeft(c) > time.Duration(0) {
 			c.SendError("muted")
 			return false
 		}

@@ -14,11 +14,11 @@ func TestMuteTimes(t *testing.T) {
 	c.user.id = uid
 
 	state.mutes[uid] = timeinfuture
-	if !mutes.isUserMuted(c) {
+	if !(mutes.muteTimeLeft(c) > time.Duration(0)) {
 		t.Error("user should be banned because the expiretime is in the future")
 	}
 	state.mutes[uid] = timeinpast
-	if mutes.isUserMuted(c) {
+	if mutes.muteTimeLeft(c) > time.Duration(0) {
 		t.Error("user should NOT be banned because the expiretime is in the past")
 	}
 
