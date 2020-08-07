@@ -89,6 +89,10 @@ type PrivmsgOut struct {
 	Data      string `json:"data,omitempty"`
 }
 
+type GenericError struct {
+	Description string `json:"description"`
+}
+
 // Create a new connection using the specified socket and router.
 func newConnection(s *websocket.Conn, user *User, ip string) {
 	c := &Connection{
