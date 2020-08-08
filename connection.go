@@ -93,6 +93,11 @@ type GenericError struct {
 	Description string `json:"description"`
 }
 
+type MutedError struct {
+	GenericError
+	MuteTimeLeft int64 `json:"muteTimeLeft"`
+}
+
 // Create a new connection using the specified socket and router.
 func newConnection(s *websocket.Conn, user *User, ip string) {
 	c := &Connection{
@@ -388,8 +393,15 @@ func (c *Connection) canMsg(msg string, ignoresilence bool) bool {
 	}
 
 	if !ignoresilence {
-		if mutes.muteTimeLeft(c) > time.Duration(0) {
-			c.SendError("muted")
+		muteTimeLeft := mutes.muteTimeLeft(c)
+		if muteTimeLeft > time.Duration(0) {
+			c.EmitBlock(
+				"ERR",
+				MutedError{
+					GenericError{"muted"},
+					int64(muteTimeLeft / time.Second),
+				},
+			)
 			return false
 		}
 
