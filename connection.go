@@ -213,7 +213,7 @@ func (c *Connection) writePumpText() {
 				return
 			}
 		case <-c.banned:
-			c.write(websocket.TextMessage, []byte(`ERR "banned"`))
+			c.write(websocket.TextMessage, []byte(`ERR {"description":"banned"}`))
 			c.write(websocket.CloseMessage, []byte{})
 			return
 		case <-c.stop:
@@ -681,7 +681,7 @@ func (c *Connection) OnPong(data []byte) {
 }
 
 func (c *Connection) SendError(identifier string) {
-	c.EmitBlock("ERR", identifier)
+	c.EmitBlock("ERR", GenericError{identifier})
 }
 
 func (c *Connection) Refresh() {
