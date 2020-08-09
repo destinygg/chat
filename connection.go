@@ -55,6 +55,7 @@ type EventDataOut struct {
 	Timestamp    int64  `json:"timestamp"`
 	Data         string `json:"data,omitempty"`
 	Extradata    string `json:"extradata,omitempty"`
+	Duration     int64  `json:"duration,omitempty"`
 }
 
 type BanIn struct {
@@ -556,6 +557,7 @@ func (c *Connection) OnMute(data []byte) {
 	mutes.muteUserid(uid, mute.Duration)
 	out := c.getEventDataOut()
 	out.Data = mute.Data
+	out.Duration = mute.Duration / int64(time.Second)
 	out.Targetuserid = uid
 	c.Broadcast("MUTE", out)
 }
