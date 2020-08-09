@@ -157,6 +157,18 @@ func (c *Connection) readPumpText() {
 	c.Names()
 	c.Join() // broadcast to the chat that a user has connected
 
+	// Check mute status.
+	muteTimeLeft := mutes.muteTimeLeft(c)
+	if muteTimeLeft > time.Duration(0) {
+		c.EmitBlock(
+			"ERR",
+			MutedError{
+				GenericError{"muted"},
+				int64(muteTimeLeft / time.Second),
+			},
+		)
+	}
+
 	for {
 		msgtype, message, err := c.socket.ReadMessage()
 		if err != nil || msgtype == websocket.BinaryMessage {
