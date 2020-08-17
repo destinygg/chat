@@ -75,7 +75,7 @@ func main() {
 
 		nc.AddSection("database")
 		nc.AddOption("database", "type", "mysql")
-		nc.AddOption("database", "dsn", "username:password@tcp(localhost:3306)/destinygg?loc=UTC&parseTime=true&strict=true&timeout=1s&time_zone=\"+00:00\"")
+		nc.AddOption("database", "dsn", "username:password@tcp(localhost:3306)/destinygg?loc=UTC&parseTime=true&timeout=1s&time_zone=\"+00:00\"")
 
 		nc.AddSection("api")
 		nc.AddOption("api", "url", "http://www.destiny.gg/api")
