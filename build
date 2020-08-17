@@ -1,2 +1,0 @@
-#!/bin/bash
-go build $1 -o chat main.go data.go mutes.go bans.go user.go user_ffjson.go hub.go connection.go debug.go cache.go database.go api.go namescache.go namescache_ffjson.go errors.go
