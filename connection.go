@@ -55,6 +55,7 @@ type EventDataOut struct {
 	Timestamp    int64  `json:"timestamp"`
 	Data         string `json:"data,omitempty"`
 	Extradata    string `json:"extradata,omitempty"`
+	Duration     int64  `json:"duration,omitempty"`
 }
 
 type BanIn struct {
@@ -148,6 +149,12 @@ func (c *Connection) readPumpText() {
 	c.Names()
 	c.Join() // broadcast to the chat that a user has connected
 
+	// Check mute status.
+	muteTimeLeft := mutes.muteTimeLeft(c)
+	if muteTimeLeft > time.Duration(0) {
+		c.EmitBlock("ERR", NewMutedError(muteTimeLeft))
+	}
+
 	for {
 		msgtype, message, err := c.socket.ReadMessage()
 		if err != nil || msgtype == websocket.BinaryMessage {
@@ -209,7 +216,7 @@ func (c *Connection) writePumpText() {
 				return
 			}
 		case <-c.banned:
-			c.write(websocket.TextMessage, []byte(`ERR "banned"`))
+			c.write(websocket.TextMessage, []byte(`ERR {"description":"banned"}`))
 			c.write(websocket.CloseMessage, []byte{})
 			return
 		case <-c.stop:
@@ -384,8 +391,9 @@ func (c *Connection) canMsg(msg string, ignoresilence bool) bool {
 	}
 
 	if !ignoresilence {
-		if mutes.isUserMuted(c) {
-			c.SendError("muted")
+		muteTimeLeft := mutes.muteTimeLeft(c)
+		if muteTimeLeft > time.Duration(0) {
+			c.EmitBlock("ERR", NewMutedError(muteTimeLeft))
 			return false
 		}
 
@@ -528,6 +536,7 @@ func (c *Connection) OnMute(data []byte) {
 	mutes.muteUserid(uid, mute.Duration)
 	out := c.getEventDataOut()
 	out.Data = mute.Data
+	out.Duration = mute.Duration / int64(time.Second)
 	out.Targetuserid = uid
 	c.Broadcast("MUTE", out)
 }
@@ -677,7 +686,7 @@ func (c *Connection) OnPong(data []byte) {
 }
 
 func (c *Connection) SendError(identifier string) {
-	c.EmitBlock("ERR", identifier)
+	c.EmitBlock("ERR", GenericError{identifier})
 }
 
 func (c *Connection) Refresh() {

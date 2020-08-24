@@ -36,17 +36,19 @@ func (m *Mutes) unmuteUserid(uid Userid) {
 	state.save()
 }
 
-func (m *Mutes) isUserMuted(c *Connection) bool {
+func (m *Mutes) muteTimeLeft(c *Connection) time.Duration {
 	if c.user == nil {
-		return true
+		return time.Duration(0)
 	}
 
 	state.Lock()
 	defer state.Unlock()
 
-	t, ok := state.mutes[c.user.id]
+	muteExpirationTime, ok := state.mutes[c.user.id]
 	if !ok {
-		return false
+		return time.Duration(0)
 	}
-	return !isExpiredUTC(t)
+
+	timeLeft := time.Until(muteExpirationTime)
+	return timeLeft
 }

@@ -139,7 +139,7 @@ func main() {
 
 		if banned {
 			ws.SetWriteDeadline(time.Now().Add(WRITETIMEOUT))
-			ws.WriteMessage(websocket.TextMessage, []byte(`ERR "banned"`))
+			ws.WriteMessage(websocket.TextMessage, []byte(`ERR {"description":"banned"}`))
 			return
 		}
 
