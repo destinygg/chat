@@ -7,27 +7,44 @@ Licensed under the Apache License, Version 2.0
 
 http://www.apache.org/licenses/LICENSE-2.0.html
 
-This is my first not-so-tiny Go project, so if there is anything that could be improved, please do tell.
+This is my (sztanpet's) first not-so-tiny Go project, so if there is anything that could be improved, please do tell.
 
-=== How to Build:
+### How to Build & Run
 
-`go get` each package listed in main.go
+1. Clone this repo.
 
-fix the redis library to this specific commit with:
+```
+$ git clone https://github.com/destinygg/chat.git
+```
 
-    cd $GOPATH/src/github.com/vmihailenco/redis
-    
-    git checkout 28a881e7240a23c43ceee5a9e0c9a56da2da3db3
+2. Navigate into the project folder.
 
-redis/v2 changed the function argument style for creating a new tcp client
+```
+$ cd chat
+```
 
-this is the parent commit that we we depend on:
+3. Download all dependencies.
 
-https://github.com/vmihailenco/redis/commit/28a881e7240a23c43ceee5a9e0c9a56da2da3db3
+```
+$ go mod download
+```
 
-this is the commit that broke our code:
+4. Verify dependency checksums to ensure nothing fishy is going on.
 
-https://github.com/vmihailenco/redis/commit/ce34e39219f360baedf597e03f0a9c938bce59dc
+```
+$ go mod verify
+```
 
-this whole thing won't be an issue any more when we vendor the dependencies with something like godep
+5. Build the binary.
 
+```
+$ go build -o chat
+```
+
+6. Run the binary.
+
+```
+$ ./chat
+```
+
+If a `settings.cfg` file doesn't exist, one will be created on first run. Modify it to your liking and run the binary again when done.
