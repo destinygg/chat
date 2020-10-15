@@ -93,6 +93,8 @@ func (nc *namesCache) marshalNames(updateircnames bool) {
 	}
 	nc.marshallednames, _ = n.MarshalJSON()
 
+	cacheConnectedUsers(nc.marshallednames)
+
 	for _, u := range nc.users {
 		u.RUnlock()
 	}

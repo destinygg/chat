@@ -231,3 +231,14 @@ func cacheChatEvent(msg *message) {
 		D("cacheChatEvent redis error", err)
 	}
 }
+
+func cacheConnectedUsers(marshallednames []byte) {
+	conn := redisGetConn()
+	defer conn.Return()
+
+	_, err := conn.DoOK("SET", "CHAT:connectedUsers", marshallednames)
+
+	if err != nil {
+		D("Error caching connected users.", err)
+	}
+}
