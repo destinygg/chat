@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"runtime"
 	"sync"
 	"time"
@@ -33,11 +34,6 @@ var (
 		mutes: make(map[Userid]time.Time),
 	}
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
 
 const (
 	WRITETIMEOUT         = 10 * time.Second
@@ -67,6 +63,7 @@ func main() {
 		nc.AddOption("default", "maxprocesses", "0")
 		nc.AddOption("default", "chatdelay", fmt.Sprintf("%d", 300*time.Millisecond))
 		nc.AddOption("default", "maxthrottletime", fmt.Sprintf("%d", 5*time.Minute))
+		nc.AddOption("default", "allowedoriginhost", "localhost")
 
 		nc.AddSection("redis")
 		nc.AddOption("redis", "address", "localhost:6379")
@@ -94,6 +91,7 @@ func main() {
 	processes, _ := c.GetInt64("default", "maxprocesses")
 	delay, _ := c.GetInt64("default", "chatdelay")
 	maxthrottletime, _ := c.GetInt64("default", "maxthrottletime")
+	allowedoriginhost, _ := c.GetString("default", "allowedoriginhost")
 	apiurl, _ := c.GetString("api", "url")
 	apikey, _ := c.GetString("api", "key")
 	DELAY = time.Duration(delay)
@@ -123,6 +121,24 @@ func main() {
 	initBroadcast(redisdb)
 	initBans(redisdb)
 	initUsers(redisdb)
+
+	upgrader := websocket.Upgrader{
+		ReadBufferSize: 1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header["Origin"]
+			if len(origin) == 0 {
+				return true
+			}
+
+			u, err := url.Parse(origin[0])
+			if err != nil {
+				return false
+			}
+
+			return allowedoriginhost == u.Host
+		},
+	}
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
@@ -173,7 +189,7 @@ func (s *State) load() {
 	s.Lock()
 	defer s.Unlock()
 
-	b, err := ioutil.ReadFile(".state.dc")
+	b, err := ioutil.ReadFile("state.dc")
 	if err != nil {
 		D("Error while reading from states file", err)
 		return
@@ -203,7 +219,7 @@ func (s *State) save() {
 		D("Error encoding submode:", err)
 	}
 
-	err = ioutil.WriteFile(".state.dc", mb.Bytes(), 0600)
+	err = ioutil.WriteFile("state.dc", mb.Bytes(), 0600)
 	if err != nil {
 		D("Error with writing out state file:", err)
 	}

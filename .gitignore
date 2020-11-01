@@ -3,5 +3,5 @@ settings.cfg
 *.sublime-*
 deploy.sh
 *.pprof
-.state.dc
+state.dc
 /.idea
