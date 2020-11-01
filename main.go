@@ -189,7 +189,7 @@ func (s *State) load() {
 	s.Lock()
 	defer s.Unlock()
 
-	b, err := ioutil.ReadFile(".state.dc")
+	b, err := ioutil.ReadFile("state.dc")
 	if err != nil {
 		D("Error while reading from states file", err)
 		return
@@ -219,7 +219,7 @@ func (s *State) save() {
 		D("Error encoding submode:", err)
 	}
 
-	err = ioutil.WriteFile(".state.dc", mb.Bytes(), 0600)
+	err = ioutil.WriteFile("state.dc", mb.Bytes(), 0600)
 	if err != nil {
 		D("Error with writing out state file:", err)
 	}
