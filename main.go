@@ -67,6 +67,7 @@ func main() {
 		nc.AddOption("default", "maxprocesses", "0")
 		nc.AddOption("default", "chatdelay", fmt.Sprintf("%d", 300*time.Millisecond))
 		nc.AddOption("default", "maxthrottletime", fmt.Sprintf("%d", 5*time.Minute))
+		nc.AddOption("default", "allowedoriginhost", "localhost")
 
 		nc.AddSection("redis")
 		nc.AddOption("redis", "address", "localhost:6379")
@@ -94,6 +95,7 @@ func main() {
 	processes, _ := c.GetInt64("default", "maxprocesses")
 	delay, _ := c.GetInt64("default", "chatdelay")
 	maxthrottletime, _ := c.GetInt64("default", "maxthrottletime")
+	allowedoriginhost, _ := c.GetString("default", "allowedoriginhost")
 	apiurl, _ := c.GetString("api", "url")
 	apikey, _ := c.GetString("api", "key")
 	DELAY = time.Duration(delay)
