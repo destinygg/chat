@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"runtime"
 	"sync"
 	"time"
@@ -33,11 +34,6 @@ var (
 		mutes: make(map[Userid]time.Time),
 	}
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
 
 const (
 	WRITETIMEOUT         = 10 * time.Second
@@ -125,6 +121,24 @@ func main() {
 	initBroadcast(redisdb)
 	initBans(redisdb)
 	initUsers(redisdb)
+
+	upgrader := websocket.Upgrader{
+		ReadBufferSize: 1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header["Origin"]
+			if len(origin) == 0 {
+				return true
+			}
+
+			u, err := url.Parse(origin[0])
+			if err != nil {
+				return false
+			}
+
+			return allowedoriginhost == u.Host
+		},
+	}
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
