@@ -1,0 +1,31 @@
+version: '3.4'
+services:
+  chat:
+    build:
+      context: ./chat
+      dockerfile: Dockerfile
+    container_name: dgg-chat
+    volumes:
+      - ./chat/settings.cfg:/app/settings.cfg:ro
+      - ./chat/state.dc:/app/state.dc
+    ports:
+      - "1118:1118"
+    restart: unless-stopped
+    depends_on:
+      - redis
+      - mariadb
+  redis:
+    image: redis
+    container_name: dgg-redis
+    volumes:
+      - ./data/redis:/data
+    restart: unless-stopped
+  mariadb:
+    image: mariadb:latest
+    container_name: dgg-mariadb
+    environment:
+      - MYSQL_ROOT_PASSWORD=rSlashJaydrVernandaFails
+      - MYSQL_DATABASE=destinygg
+    volumes:
+      - ./data/mariadb:/var/lib/mysql
+    restart: unless-stopped
