@@ -1,0 +1,23 @@
+[default]
+debug = true
+listenaddress = 0.0.0.0:1118
+maxprocesses = 0
+chatdelay = 300000000
+maxthrottletime = 300000000000
+allowedoriginhost = www.destiny.gg
+
+[api]
+url = https://www.destiny.gg/api
+key = TonyW_JaydrVernanda
+
+[redis]
+address = dgg-redis:6379
+database = 0
+password =
+
+[database]
+type = mysql
+dsn = root:rSlashJaydrVernandaFails@tcp(dgg-mariadb:3306)/destiny_gg_fl?loc=UTC&parseTime=true&timeout=1s
+# ^ dont use root in prod, ever.
+# Schema: https://github.com/destinygg/website/blob/master/config/destiny.gg.sql
+# Data Init: https://github.com/destinygg/website/blob/master/config/destiny.gg.data.sql
