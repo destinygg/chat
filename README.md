@@ -1,3 +1,9 @@
+
+# Important Notice
+As of 6/28/2022 this repository is no longer being publicly maintained. Code in it's current state is left for historic preservation, but will no longer be receiving updates, security patches, or support.
+
+Licensing inquiries can be submitted via email to contact@destiny.gg
+
 The Destiny Chat Back-End
 ===========
 
