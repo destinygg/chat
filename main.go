@@ -123,7 +123,7 @@ func main() {
 	initUsers(redisdb)
 
 	upgrader := websocket.Upgrader{
-		ReadBufferSize: 1024,
+		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header["Origin"]
@@ -140,9 +140,10 @@ func main() {
 		},
 	}
 
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+	serveMux := http.NewServeMux()
+	serveMux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
-			http.Error(w, "Method not allowed", 405)
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -162,8 +163,17 @@ func main() {
 		newConnection(ws, user, ip)
 	})
 
+	server := http.Server{
+		Addr:              addr,
+		ReadTimeout:       5 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		Handler:           serveMux,
+	}
+
 	fmt.Printf("Using %v threads, and listening on: %v\n", processes, addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
 }
